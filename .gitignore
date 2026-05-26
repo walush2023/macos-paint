@@ -4,3 +4,4 @@
 DerivedData/
 Paint.app/
 *.dSYM/
+.DS_Store
