@@ -97,7 +97,7 @@ final class MainWindowController: NSWindowController {
 
     // MARK: - File menu actions
 
-    @objc func newDocument() {
+    @objc func newDocument(_ sender: Any?) {
         confirmDiscardIfNeeded { [weak self] proceed in
             guard let self = self, proceed else { return }
             self.canvas.resetCanvas(size: NSSize(width: 800, height: 600))
@@ -107,7 +107,7 @@ final class MainWindowController: NSWindowController {
         }
     }
 
-    @objc func openDocument() {
+    @objc func openDocument(_ sender: Any?) {
         confirmDiscardIfNeeded { [weak self] proceed in
             guard let self = self, proceed else { return }
             let panel = NSOpenPanel()
@@ -128,15 +128,15 @@ final class MainWindowController: NSWindowController {
         }
     }
 
-    @objc func saveDocument() {
+    @objc func saveDocument(_ sender: Any?) {
         if let url = currentFileURL {
             saveTo(url: url)
         } else {
-            saveAsDocument()
+            saveAsDocument(sender)
         }
     }
 
-    @objc func saveAsDocument() {
+    @objc func saveAsDocument(_ sender: Any?) {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? "未命名.png"
         if #available(macOS 11.0, *) {
@@ -169,14 +169,14 @@ final class MainWindowController: NSWindowController {
         }
     }
 
-    @objc func printDocument() {
+    @objc func printDocument(_ sender: Any?) {
         canvas.commitSelection()
         let printInfo = NSPrintInfo.shared
         let op = NSPrintOperation(view: canvas, printInfo: printInfo)
         op.run()
     }
 
-    @objc func showProperties() {
+    @objc func showProperties(_ sender: Any?) {
         guard let win = window else { return }
         let s = PaintState.shared.canvasSize
         let alert = NSAlert()
@@ -186,30 +186,31 @@ final class MainWindowController: NSWindowController {
         alert.beginSheetModal(for: win, completionHandler: nil)
     }
 
-    // MARK: - Edit actions
+    // MARK: - Edit actions (override NSResponder standard actions)
 
-    @objc func undo() { canvas.undo(); markDirty() }
-    @objc func redo() { canvas.redo(); markDirty() }
-    @objc func cut() {
+    @objc func undoAction(_ sender: Any?) { canvas.undo(); markDirty() }
+    @objc func redoAction(_ sender: Any?) { canvas.redo(); markDirty() }
+
+    @objc func cut(_ sender: Any?) {
         if let img = canvas.cutSelection() {
             writeImageToPasteboard(img)
             markDirty()
         }
     }
-    @objc func copy() {
+    @objc func copy(_ sender: Any?) {
         if let img = canvas.copySelection() {
             writeImageToPasteboard(img)
         }
     }
-    @objc func paste() {
+    @objc func paste(_ sender: Any?) {
         let pb = NSPasteboard.general
         if let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage], let img = images.first {
             canvas.pasteImage(img)
             markDirty()
         }
     }
-    @objc func selectAll() { canvas.selectAll() }
-    @objc func deleteSelection() {
+    @objc override func selectAll(_ sender: Any?) { canvas.selectAll() }
+    @objc func deleteSelection(_ sender: Any?) {
         _ = canvas.cutSelection()
         markDirty()
     }
@@ -222,8 +223,8 @@ final class MainWindowController: NSWindowController {
 
     // MARK: - Image actions
 
-    @objc func cropImage() { canvas.cropToSelection(); markDirty() }
-    @objc func resizeImage() {
+    @objc func cropImage(_ sender: Any?) { canvas.cropToSelection(); markDirty() }
+    @objc func resizeImage(_ sender: Any?) {
         guard let win = window else { return }
         ResizeDialog.run(in: win, currentSize: PaintState.shared.canvasSize) { [weak self] result in
             guard let self = self, let r = result else { return }
@@ -231,39 +232,39 @@ final class MainWindowController: NSWindowController {
             self.markDirty()
         }
     }
-    @objc func rotateRight() { canvas.rotateCanvas(byDegrees: -90); markDirty() }
-    @objc func rotateLeft()  { canvas.rotateCanvas(byDegrees: 90);  markDirty() }
-    @objc func rotate180()   { canvas.rotateCanvas(byDegrees: 180); markDirty() }
-    @objc func flipHorizontal() { canvas.flipCanvas(horizontal: true);  markDirty() }
-    @objc func flipVertical()   { canvas.flipCanvas(horizontal: false); markDirty() }
+    @objc func rotateRight(_ sender: Any?) { canvas.rotateCanvas(byDegrees: -90); markDirty() }
+    @objc func rotateLeft(_ sender: Any?)  { canvas.rotateCanvas(byDegrees: 90);  markDirty() }
+    @objc func rotate180(_ sender: Any?)   { canvas.rotateCanvas(byDegrees: 180); markDirty() }
+    @objc func flipHorizontal(_ sender: Any?) { canvas.flipCanvas(horizontal: true);  markDirty() }
+    @objc func flipVertical(_ sender: Any?)   { canvas.flipCanvas(horizontal: false); markDirty() }
 
     // MARK: - View
 
-    @objc func zoomIn() {
+    @objc func zoomIn(_ sender: Any?) {
         PaintState.shared.zoom = min(8.0, PaintState.shared.zoom * 1.5)
         NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
     }
-    @objc func zoomOut() {
+    @objc func zoomOut(_ sender: Any?) {
         PaintState.shared.zoom = max(0.1, PaintState.shared.zoom / 1.5)
         NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
     }
-    @objc func zoom100() {
+    @objc func zoom100(_ sender: Any?) {
         PaintState.shared.zoom = 1.0
         NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
     }
-    @objc func toggleGridlines() {
+    @objc func toggleGridlines(_ sender: Any?) {
         PaintState.shared.showGridlines.toggle()
         canvas.needsDisplay = true
     }
-    @objc func toggleRulers() {
+    @objc func toggleRulers(_ sender: Any?) {
         PaintState.shared.showRulers.toggle()
         NotificationCenter.default.post(name: PaintState.viewChanged, object: nil)
     }
-    @objc func toggleStatusBar() {
+    @objc func toggleStatusBar(_ sender: Any?) {
         PaintState.shared.showStatusBar.toggle()
         NotificationCenter.default.post(name: PaintState.viewChanged, object: nil)
     }
-    @objc func toggleFullScreen() {
+    @objc func toggleFullScreen(_ sender: Any?) {
         window?.toggleFullScreen(nil)
     }
 
@@ -284,7 +285,7 @@ final class MainWindowController: NSWindowController {
         alert.beginSheetModal(for: win) { [weak self] response in
             switch response {
             case .alertFirstButtonReturn:
-                self?.saveDocument()
+                self?.saveDocument(nil)
                 completion(true)
             case .alertSecondButtonReturn:
                 completion(true)

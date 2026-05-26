@@ -65,17 +65,17 @@ final class RibbonView: NSView {
     private func buildClipboardGroup(x: CGFloat) -> CGFloat {
         var x = x
         let paste = makeBigButton(title: "貼上", icon: "📋", x: x) { [weak self] _ in
-            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.paste), with: nil)
+            self?.window?.windowController?.tryToPerform(Selector("paste:"), with: nil)
         }
         addSubview(paste)
         x += 56
         let cut = makeSmallButton(title: "剪下", icon: "✂", y: 4) { [weak self] _ in
-            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.cut), with: nil)
+            self?.window?.windowController?.tryToPerform(Selector("cut:"), with: nil)
         }
         cut.frame.origin.x = x
         addSubview(cut)
         let copy = makeSmallButton(title: "複製", icon: "📑", y: 28) { [weak self] _ in
-            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.copy), with: nil)
+            self?.window?.windowController?.tryToPerform(Selector("copy:"), with: nil)
         }
         copy.frame.origin.x = x
         addSubview(copy)
@@ -95,11 +95,11 @@ final class RibbonView: NSView {
         x += 56
 
         let crop = makeSmallButton(title: "裁剪", icon: "✂", y: 4) { [weak self] _ in
-            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.cropImage), with: nil)
+            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.cropImage(_:)), with: nil)
         }; crop.frame.origin.x = x; addSubview(crop)
 
         let resize = makeSmallButton(title: "重新調整大小", icon: "⤢", y: 28) { [weak self] _ in
-            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.resizeImage), with: nil)
+            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.resizeImage(_:)), with: nil)
         }; resize.frame.origin.x = x; addSubview(resize)
 
         let rotate = makeSmallButton(title: "旋轉 ▾", icon: "⟳", y: 52) { [weak self] sender in
@@ -356,12 +356,12 @@ final class RibbonView: NSView {
 
     private func showRotateMenu(from sender: NSButton) {
         let m = NSMenu()
-        m.addItem(withTitle: "向右旋轉 90°",  action: #selector(MainWindowController.rotateRight), keyEquivalent: "")
-        m.addItem(withTitle: "向左旋轉 90°",  action: #selector(MainWindowController.rotateLeft),  keyEquivalent: "")
-        m.addItem(withTitle: "旋轉 180°",     action: #selector(MainWindowController.rotate180),   keyEquivalent: "")
+        m.addItem(withTitle: "向右旋轉 90°",  action: #selector(MainWindowController.rotateRight(_:)), keyEquivalent: "")
+        m.addItem(withTitle: "向左旋轉 90°",  action: #selector(MainWindowController.rotateLeft(_:)),  keyEquivalent: "")
+        m.addItem(withTitle: "旋轉 180°",     action: #selector(MainWindowController.rotate180(_:)),   keyEquivalent: "")
         m.addItem(.separator())
-        m.addItem(withTitle: "水平翻轉",      action: #selector(MainWindowController.flipHorizontal), keyEquivalent: "")
-        m.addItem(withTitle: "垂直翻轉",      action: #selector(MainWindowController.flipVertical),   keyEquivalent: "")
+        m.addItem(withTitle: "水平翻轉",      action: #selector(MainWindowController.flipHorizontal(_:)), keyEquivalent: "")
+        m.addItem(withTitle: "垂直翻轉",      action: #selector(MainWindowController.flipVertical(_:)),   keyEquivalent: "")
         for item in m.items { item.target = window?.windowController }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.frame.height), in: sender)
     }
@@ -371,8 +371,8 @@ final class RibbonView: NSView {
         m.addItem(withTitle: "矩形選取",   action: #selector(setSelectRect),  keyEquivalent: "")
         m.addItem(withTitle: "任意形狀選取", action: #selector(setSelectFree), keyEquivalent: "")
         m.addItem(.separator())
-        m.addItem(withTitle: "全選",       action: #selector(MainWindowController.selectAll), keyEquivalent: "")
-        for item in m.items where item.action == #selector(MainWindowController.selectAll) {
+        m.addItem(withTitle: "全選",       action: Selector("selectAll:"), keyEquivalent: "")
+        for item in m.items where item.action == Selector("selectAll:") {
             item.target = window?.windowController
         }
         for item in m.items where item.target == nil { item.target = self }

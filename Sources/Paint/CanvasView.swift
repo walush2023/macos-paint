@@ -688,9 +688,10 @@ final class CanvasView: NSView {
         guard r.width > 0 && r.height > 0 else { selectionRect = nil; return }
         let img = NSImage(size: r.size)
         img.lockFocus()
-        bitmap.draw(at: NSPoint(x: -r.origin.x, y: -r.origin.y),
-                    from: NSRect(origin: .zero, size: bounds.size),
-                    operation: .sourceOver, fraction: 1.0)
+        bitmap.draw(in: NSRect(
+            x: -r.origin.x, y: -r.origin.y,
+            width: CGFloat(bitmap.pixelsWide), height: CGFloat(bitmap.pixelsHigh)
+        ))
         img.unlockFocus()
         selectionImage = img
         drawInBitmap { _ in
@@ -713,9 +714,10 @@ final class CanvasView: NSView {
             shifted.transform(using: tx)
             shifted.addClip()
         }
-        bitmap.draw(at: NSPoint(x: -r.origin.x, y: -r.origin.y),
-                    from: NSRect(origin: .zero, size: bounds.size),
-                    operation: .sourceOver, fraction: 1.0)
+        bitmap.draw(in: NSRect(
+            x: -r.origin.x, y: -r.origin.y,
+            width: CGFloat(bitmap.pixelsWide), height: CGFloat(bitmap.pixelsHigh)
+        ))
         img.unlockFocus()
         selectionImage = img
         drawInBitmap { _ in
@@ -776,9 +778,10 @@ final class CanvasView: NSView {
         if let r = selectionRect {
             let img = NSImage(size: r.size)
             img.lockFocus()
-            bitmap.draw(at: NSPoint(x: -r.origin.x, y: -r.origin.y),
-                        from: NSRect(origin: .zero, size: bounds.size),
-                        operation: .sourceOver, fraction: 1.0)
+            bitmap.draw(in: NSRect(
+                x: -r.origin.x, y: -r.origin.y,
+                width: CGFloat(bitmap.pixelsWide), height: CGFloat(bitmap.pixelsHigh)
+            ))
             img.unlockFocus()
             return img
         }
@@ -805,9 +808,10 @@ final class CanvasView: NSView {
         let img = selectionImage ?? {
             let i = NSImage(size: r.size)
             i.lockFocus()
-            bitmap.draw(at: NSPoint(x: -r.origin.x, y: -r.origin.y),
-                        from: NSRect(origin: .zero, size: bounds.size),
-                        operation: .sourceOver, fraction: 1.0)
+            bitmap.draw(in: NSRect(
+                x: -r.origin.x, y: -r.origin.y,
+                width: CGFloat(bitmap.pixelsWide), height: CGFloat(bitmap.pixelsHigh)
+            ))
             i.unlockFocus()
             return i
         }()
