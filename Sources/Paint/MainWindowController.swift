@@ -6,17 +6,22 @@ final class MainWindowController: NSWindowController {
     let ribbon = RibbonView()
     let statusBar = StatusBarView()
     let scrollView = NSScrollView()
+    let tabBar = TabBarView()
     var currentFileURL: URL?
     var isDirty: Bool = false
 
+    private let tabBarHeight: CGFloat = 28
+    private let ribbonHeight: CGFloat = 110
+    private let statusBarHeight: CGFloat = 24
+
     init() {
         let win = NSWindow(
-            contentRect: NSRect(x: 100, y: 100, width: 1100, height: 760),
+            contentRect: NSRect(x: 80, y: 80, width: 1280, height: 800),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
         win.title = "未命名 - 小畫家"
-        win.minSize = NSSize(width: 600, height: 400)
+        win.minSize = NSSize(width: 800, height: 500)
         super.init(window: win)
         buildLayout()
 
@@ -34,18 +39,31 @@ final class MainWindowController: NSWindowController {
         content.autoresizingMask = [.width, .height]
         win.contentView = content
 
-        ribbon.frame = NSRect(x: 0, y: content.bounds.height - 110, width: content.bounds.width, height: 110)
+        let h = content.bounds.height
+
+        // 上方 tab bar
+        tabBar.frame = NSRect(x: 0, y: h - tabBarHeight, width: content.bounds.width, height: tabBarHeight)
+        tabBar.autoresizingMask = [.width, .minYMargin]
+        tabBar.onTabSelected = { [weak self] tab in self?.selectTab(tab) }
+        tabBar.onFileMenu = { [weak self] in self?.showFileMenu() }
+        content.addSubview(tabBar)
+
+        // ribbon 位於 tab bar 下方
+        ribbon.frame = NSRect(x: 0, y: h - tabBarHeight - ribbonHeight,
+                              width: content.bounds.width, height: ribbonHeight)
         ribbon.autoresizingMask = [.width, .minYMargin]
         content.addSubview(ribbon)
 
-        statusBar.frame = NSRect(x: 0, y: 0, width: content.bounds.width, height: 24)
+        // 狀態列
+        statusBar.frame = NSRect(x: 0, y: 0, width: content.bounds.width, height: statusBarHeight)
         statusBar.autoresizingMask = [.width, .maxYMargin]
         content.addSubview(statusBar)
 
+        // 工作區
         scrollView.frame = NSRect(
-            x: 0, y: 24,
+            x: 0, y: statusBarHeight,
             width: content.bounds.width,
-            height: content.bounds.height - 110 - 24
+            height: h - tabBarHeight - ribbonHeight - statusBarHeight
         )
         scrollView.autoresizingMask = [.width, .height]
         scrollView.hasHorizontalScroller = true
@@ -54,12 +72,42 @@ final class MainWindowController: NSWindowController {
         scrollView.drawsBackground = true
         content.addSubview(scrollView)
 
-        let docView = NSView(frame: NSRect(x: 0, y: 0, width: max(800, scrollView.contentSize.width),
-                                            height: max(600, scrollView.contentSize.height)))
+        let docView = NSView(frame: NSRect(x: 0, y: 0, width: max(840, scrollView.contentSize.width),
+                                            height: max(640, scrollView.contentSize.height)))
         docView.wantsLayer = true
         scrollView.documentView = docView
-        canvas.frame = NSRect(x: 20, y: 20, width: 800, height: 600)
+        canvas.frame = NSRect(x: 20, y: docView.bounds.height - 620, width: 800, height: 600)
         docView.addSubview(canvas)
+    }
+
+    private func selectTab(_ tab: TabBarView.Tab) {
+        switch tab {
+        case .home: ribbon.showHomeTab()
+        case .view: ribbon.showViewTab()
+        case .file: break  // handled by onFileMenu
+        }
+    }
+
+    private func showFileMenu() {
+        guard let win = window else { return }
+        let menu = NSMenu()
+        menu.addItem(makeFileItem("新增",  Selector(("newDocument:"))))
+        menu.addItem(makeFileItem("開啟…", Selector(("openDocument:"))))
+        menu.addItem(makeFileItem("儲存",  Selector(("saveDocument:"))))
+        menu.addItem(makeFileItem("另存新檔…", Selector(("saveAsDocument:"))))
+        menu.addItem(.separator())
+        menu.addItem(makeFileItem("列印…", Selector(("printDocument:"))))
+        menu.addItem(.separator())
+        menu.addItem(makeFileItem("內容…", Selector(("showProperties:"))))
+        let appOrigin = tabBar.fileButtonOrigin
+        let p = tabBar.convert(NSPoint(x: appOrigin.x, y: 0), to: nil)
+        let screenPt = win.convertPoint(toScreen: p)
+        menu.popUp(positioning: nil, at: screenPt, in: nil)
+    }
+    private func makeFileItem(_ title: String, _ action: Selector) -> NSMenuItem {
+        let it = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        it.target = self
+        return it
     }
 
     private func updateTitle() {

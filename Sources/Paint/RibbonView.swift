@@ -17,14 +17,37 @@ final class RibbonView: NSView {
 
     override var isFlipped: Bool { true }
 
+    private var currentTab: Tab = .home
+    enum Tab { case home, view }
+
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 110))
         wantsLayer = true
         layer?.backgroundColor = NSColor(calibratedWhite: 0.95, alpha: 1).cgColor
-        buildLayout()
+        showHomeTab()
         observeState()
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    func showHomeTab() {
+        currentTab = .home
+        subviews.forEach { $0.removeFromSuperview() }
+        toolButtons.removeAll(); shapeButtons.removeAll()
+        brushButtons.removeAll(); sizeButtons.removeAll()
+        paletteCells.removeAll()
+        buildLayout()
+        refreshHighlights()
+        refreshColors()
+    }
+
+    func showViewTab() {
+        currentTab = .view
+        subviews.forEach { $0.removeFromSuperview() }
+        toolButtons.removeAll(); shapeButtons.removeAll()
+        brushButtons.removeAll(); sizeButtons.removeAll()
+        paletteCells.removeAll()
+        buildViewTabLayout()
+    }
 
     private func observeState() {
         let nc = NotificationCenter.default
@@ -50,6 +73,69 @@ final class RibbonView: NSView {
         if needed > frame.width {
             setFrameSize(NSSize(width: needed, height: frame.height))
         }
+    }
+
+    private func buildViewTabLayout() {
+        var x: CGFloat = 6
+        x = buildZoomGroup(x: x); x = drawSeparator(x: x)
+        x = buildShowHideGroup(x: x); x = drawSeparator(x: x)
+        _ = buildDisplayGroup(x: x)
+    }
+
+    private func buildZoomGroup(x: CGFloat) -> CGFloat {
+        let zoomIn = makeBigButton(title: "放大", icon: "🔍+", x: x) { [weak self] _ in
+            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoomIn(_:)), with: nil)
+        }
+        addSubview(zoomIn)
+        let zoomOut = makeBigButton(title: "縮小", icon: "🔍−", x: x + 56) { [weak self] _ in
+            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoomOut(_:)), with: nil)
+        }
+        addSubview(zoomOut)
+        let zoom100 = makeBigButton(title: "100%", icon: "💯", x: x + 112) { [weak self] _ in
+            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoom100(_:)), with: nil)
+        }
+        addSubview(zoom100)
+        addGroupLabel("縮放", x: x, w: 170)
+        return x + 174
+    }
+
+    private func buildShowHideGroup(x: CGFloat) -> CGFloat {
+        let rulers = NSButton(checkboxWithTitle: "尺規", target: self, action: #selector(toggleRulersBox(_:)))
+        rulers.state = PaintState.shared.showRulers ? .on : .off
+        rulers.frame = NSRect(x: x, y: 60, width: 100, height: 22)
+        addSubview(rulers)
+        let grid = NSButton(checkboxWithTitle: "格線", target: self, action: #selector(toggleGridBox(_:)))
+        grid.state = PaintState.shared.showGridlines ? .on : .off
+        grid.frame = NSRect(x: x, y: 36, width: 100, height: 22)
+        addSubview(grid)
+        let status = NSButton(checkboxWithTitle: "狀態列", target: self, action: #selector(toggleStatusBox(_:)))
+        status.state = PaintState.shared.showStatusBar ? .on : .off
+        status.frame = NSRect(x: x, y: 12, width: 100, height: 22)
+        addSubview(status)
+        addGroupLabel("顯示或隱藏", x: x, w: 100)
+        return x + 110
+    }
+
+    private func buildDisplayGroup(x: CGFloat) -> CGFloat {
+        let fs = makeBigButton(title: "全螢幕", icon: "⛶", x: x) { [weak self] _ in
+            self?.window?.windowController?.tryToPerform(#selector(MainWindowController.toggleFullScreen(_:)), with: nil)
+        }
+        addSubview(fs)
+        addGroupLabel("顯示", x: x, w: 56)
+        return x + 60
+    }
+
+    @objc private func toggleRulersBox(_ sender: NSButton) {
+        PaintState.shared.showRulers = (sender.state == .on)
+        NotificationCenter.default.post(name: PaintState.viewChanged, object: nil)
+    }
+    @objc private func toggleGridBox(_ sender: NSButton) {
+        PaintState.shared.showGridlines = (sender.state == .on)
+        NotificationCenter.default.post(name: PaintState.viewChanged, object: nil)
+    }
+    @objc private func toggleStatusBox(_ sender: NSButton) {
+        PaintState.shared.showStatusBar = (sender.state == .on)
+        NotificationCenter.default.post(name: PaintState.viewChanged, object: nil)
     }
 
     @discardableResult
