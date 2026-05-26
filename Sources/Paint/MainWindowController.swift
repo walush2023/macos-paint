@@ -22,6 +22,8 @@ final class MainWindowController: NSWindowController {
         )
         win.title = "未命名 - 小畫家"
         win.minSize = NSSize(width: 800, height: 500)
+        // 強制使用淺色外觀以對齊 Windows 小畫家視覺、避免深色模式下標籤變白看不清
+        win.appearance = NSAppearance(named: .aqua)
         super.init(window: win)
         buildLayout()
 
@@ -358,6 +360,9 @@ final class StatusBarView: NSView {
         layer?.backgroundColor = NSColor(calibratedWhite: 0.9, alpha: 1).cgColor
         for lbl in [posLabel, sizeLabel, zoomLabel] {
             lbl.font = NSFont.systemFont(ofSize: 11)
+            lbl.textColor = NSColor.black
+            lbl.drawsBackground = false
+            lbl.isBordered = false
             addSubview(lbl)
         }
         zoomSlider.target = self

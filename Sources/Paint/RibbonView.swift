@@ -350,12 +350,14 @@ final class RibbonView: NSView {
         iconLbl.isBordered = false
         iconLbl.drawsBackground = false
         iconLbl.isEditable = false
+        iconLbl.textColor = NSColor.black
         let titleLbl = NSTextField(labelWithString: title)
-        titleLbl.font = NSFont.systemFont(ofSize: 10)
+        titleLbl.font = NSFont.systemFont(ofSize: 11)
         titleLbl.alignment = .center
         titleLbl.isBordered = false
         titleLbl.drawsBackground = false
         titleLbl.isEditable = false
+        titleLbl.textColor = NSColor.black
         stack.addArrangedSubview(iconLbl)
         stack.addArrangedSubview(titleLbl)
         stack.frame = btn.bounds
@@ -374,9 +376,17 @@ final class RibbonView: NSView {
         let btn = ActionButton(frame: NSRect(x: 0, y: y, width: 110, height: 22))
         btn.bezelStyle = .smallSquare
         btn.isBordered = false
-        btn.title = "\(icon)  \(title)"
-        btn.font = NSFont.systemFont(ofSize: 11)
         btn.alignment = .left
+        let style = NSMutableParagraphStyle()
+        style.alignment = .left
+        btn.attributedTitle = NSAttributedString(
+            string: "\(icon)  \(title)",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.black,
+                .paragraphStyle: style,
+            ]
+        )
         btn.target = btn
         btn.action = #selector(ActionButton.fire(_:))
         btn.handler = action
@@ -400,7 +410,9 @@ final class RibbonView: NSView {
         let lbl = NSTextField(labelWithString: s)
         lbl.font = NSFont.systemFont(ofSize: 10)
         lbl.alignment = .center
-        lbl.textColor = .secondaryLabelColor
+        lbl.textColor = NSColor(calibratedWhite: 0.25, alpha: 1)
+        lbl.drawsBackground = false
+        lbl.isBordered = false
         lbl.frame = NSRect(x: x, y: 90, width: w, height: 16)
         addSubview(lbl)
     }
@@ -615,7 +627,7 @@ final class ColorSwatchView: NSView {
         NSBezierPath(rect: swatch).stroke()
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10),
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: NSColor.black
         ]
         (label as NSString).draw(at: NSPoint(x: 4, y: 2), withAttributes: attrs)
     }
