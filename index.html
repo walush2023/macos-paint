@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>未命名 - 小畫家</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- Title bar -->
+  <div class="titlebar">
+    <div class="qat">
+      <button class="qat-btn" id="qat-save" title="儲存">💾</button>
+      <button class="qat-btn" id="qat-undo" title="復原">↶</button>
+      <button class="qat-btn" id="qat-redo" title="取消復原">↷</button>
+      <button class="qat-btn" id="qat-customize" title="自訂快速存取工具列">▾</button>
+    </div>
+    <div class="title-text"><span id="title-filename">未命名</span> - 小畫家</div>
+    <div class="window-controls">
+      <button class="wc-btn">_</button>
+      <button class="wc-btn">▢</button>
+      <button class="wc-btn close">✕</button>
+    </div>
+  </div>
+
+  <!-- Ribbon -->
+  <div class="ribbon">
+    <div class="ribbon-tabs">
+      <button class="tab file-tab" data-tab="file">檔案</button>
+      <button class="tab active" data-tab="home">常用</button>
+      <button class="tab" data-tab="view">檢視</button>
+    </div>
+
+    <!-- Home tab -->
+    <div class="ribbon-content active" data-content="home">
+      <!-- Clipboard group -->
+      <div class="ribbon-group">
+        <div class="big-button-stack">
+          <button class="big-btn" id="btn-paste" title="貼上 (Ctrl+V)">
+            <span class="big-icon">📋</span>
+            <span class="big-label">貼上 ▾</span>
+          </button>
+        </div>
+        <div class="small-buttons">
+          <button class="small-btn" id="btn-cut" title="剪下 (Ctrl+X)"><span>✂</span><span>剪下</span></button>
+          <button class="small-btn" id="btn-copy" title="複製 (Ctrl+C)"><span>📑</span><span>複製</span></button>
+        </div>
+        <div class="group-label">剪貼簿</div>
+      </div>
+
+      <!-- Image group -->
+      <div class="ribbon-group">
+        <div class="big-button-stack">
+          <button class="big-btn tool-btn" data-tool="select" title="選取">
+            <span class="big-icon">▭</span>
+            <span class="big-label">選取 ▾</span>
+          </button>
+        </div>
+        <div class="small-buttons">
+          <button class="small-btn" id="btn-crop" title="裁剪"><span>✂</span><span>裁剪</span></button>
+          <button class="small-btn" id="btn-resize" title="重新調整大小"><span>⤢</span><span>重新調整大小</span></button>
+          <button class="small-btn" id="btn-rotate" title="旋轉"><span>⟳</span><span>旋轉 ▾</span></button>
+        </div>
+        <div class="group-label">影像</div>
+      </div>
+
+      <!-- Tools group -->
+      <div class="ribbon-group">
+        <div class="tools-grid">
+          <button class="tool-btn" data-tool="pencil" title="鉛筆">✏️</button>
+          <button class="tool-btn" data-tool="fill" title="以色彩填滿">🪣</button>
+          <button class="tool-btn" data-tool="text" title="文字">A</button>
+          <button class="tool-btn" data-tool="eraser" title="橡皮擦">🧽</button>
+          <button class="tool-btn" data-tool="picker" title="色彩選擇工具">💧</button>
+          <button class="tool-btn" data-tool="magnifier" title="放大鏡">🔍</button>
+        </div>
+        <div class="group-label">工具</div>
+      </div>
+
+      <!-- Brushes group -->
+      <div class="ribbon-group">
+        <div class="big-button-stack">
+          <button class="big-btn tool-btn active" data-tool="brush" data-brush="round" title="筆刷">
+            <span class="big-icon" id="current-brush-icon">🖌</span>
+            <span class="big-label">筆刷 ▾</span>
+          </button>
+          <div class="dropdown" id="brush-dropdown">
+            <button data-brush="round" title="筆刷">●</button>
+            <button data-brush="calligraphy1" title="書法筆 1">╱</button>
+            <button data-brush="calligraphy2" title="書法筆 2">╲</button>
+            <button data-brush="airbrush" title="噴槍">⁂</button>
+            <button data-brush="oil" title="油畫筆刷">▰</button>
+            <button data-brush="crayon" title="蠟筆">▦</button>
+            <button data-brush="marker" title="麥克筆">▬</button>
+            <button data-brush="pencil-natural" title="自然鉛筆">✎</button>
+            <button data-brush="watercolour" title="水彩筆刷">▩</button>
+          </div>
+        </div>
+        <div class="group-label">筆刷</div>
+      </div>
+
+      <!-- Shapes group -->
+      <div class="ribbon-group shapes-group">
+        <div class="shapes-grid">
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="line" title="線條">╱</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="curve" title="曲線">∿</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="ellipse" title="橢圓形">⬭</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="rect" title="矩形">▭</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="rounded-rect" title="圓角矩形">▢</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="polygon" title="多邊形">⬠</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="triangle" title="三角形">△</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="right-triangle" title="直角三角形">◣</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="diamond" title="菱形">◇</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="pentagon" title="五邊形">⬠</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="hexagon" title="六邊形">⬡</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="arrow-right" title="右箭頭">➡</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="arrow-left" title="左箭頭">⬅</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="arrow-up" title="上箭頭">⬆</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="arrow-down" title="下箭頭">⬇</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="star4" title="四角星">✦</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="star5" title="五角星">★</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="star6" title="六角星">✶</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="callout-rect" title="圓角矩形圖說文字">💬</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="callout-ellipse" title="橢圓形圖說文字">🗨</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="callout-cloud" title="雲朵圖說文字">☁</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="heart" title="愛心">♥</button>
+          <button class="shape-btn tool-btn" data-tool="shape" data-shape="lightning" title="閃電">⚡</button>
+        </div>
+        <div class="shape-options">
+          <button class="opt-btn" id="opt-outline" title="外框 ▾">外框 ▾</button>
+          <button class="opt-btn" id="opt-fill" title="填滿 ▾">填滿 ▾</button>
+        </div>
+        <div class="group-label">圖案</div>
+      </div>
+
+      <!-- Size group -->
+      <div class="ribbon-group">
+        <div class="big-button-stack">
+          <button class="big-btn" id="btn-size" title="大小">
+            <span class="big-icon">≡</span>
+            <span class="big-label">大小 ▾</span>
+          </button>
+          <div class="dropdown" id="size-dropdown">
+            <button data-size="1"><span class="sz-line" style="height:1px;"></span></button>
+            <button data-size="3"><span class="sz-line" style="height:3px;"></span></button>
+            <button data-size="5"><span class="sz-line" style="height:5px;"></span></button>
+            <button data-size="8"><span class="sz-line" style="height:8px;"></span></button>
+          </div>
+        </div>
+        <div class="group-label">大小</div>
+      </div>
+
+      <!-- Colors group -->
+      <div class="ribbon-group colors-group">
+        <div class="current-colors">
+          <div class="color-slot active" id="color1-slot" title="色彩 1">
+            <div class="color-swatch" id="color1-swatch" style="background:#000"></div>
+            <div class="color-label">色彩 1</div>
+          </div>
+          <div class="color-slot" id="color2-slot" title="色彩 2">
+            <div class="color-swatch" id="color2-swatch" style="background:#fff"></div>
+            <div class="color-label">色彩 2</div>
+          </div>
+        </div>
+        <div class="palette" id="palette">
+          <!-- Built by JS -->
+        </div>
+        <button class="edit-colors-btn" id="btn-edit-colors" title="編輯色彩">
+          <span class="ec-icon">🎨</span>
+          <span>編輯色彩</span>
+        </button>
+        <div class="group-label">色彩</div>
+      </div>
+    </div>
+
+    <!-- View tab -->
+    <div class="ribbon-content" data-content="view">
+      <div class="ribbon-group">
+        <div class="small-buttons">
+          <button class="small-btn" id="btn-zoom-in"><span>🔍+</span><span>放大</span></button>
+          <button class="small-btn" id="btn-zoom-out"><span>🔍−</span><span>縮小</span></button>
+          <button class="small-btn" id="btn-zoom-100"><span>100%</span><span>100%</span></button>
+        </div>
+        <div class="group-label">縮放</div>
+      </div>
+      <div class="ribbon-group">
+        <label class="check-row"><input type="checkbox" id="chk-rulers"> 尺規</label>
+        <label class="check-row"><input type="checkbox" id="chk-gridlines"> 格線</label>
+        <label class="check-row"><input type="checkbox" id="chk-statusbar" checked> 狀態列</label>
+        <div class="group-label">顯示或隱藏</div>
+      </div>
+      <div class="ribbon-group">
+        <div class="small-buttons">
+          <button class="small-btn" id="btn-fullscreen"><span>⛶</span><span>全螢幕</span></button>
+        </div>
+        <div class="group-label">顯示</div>
+      </div>
+    </div>
+
+    <!-- File menu (dropdown) -->
+    <div class="file-menu" id="file-menu">
+      <div class="file-menu-list">
+        <button class="fm-item" id="fm-new"><span class="fm-icon">📄</span><span>新增 (N)</span></button>
+        <button class="fm-item" id="fm-open"><span class="fm-icon">📂</span><span>開啟 (O)</span></button>
+        <button class="fm-item" id="fm-save"><span class="fm-icon">💾</span><span>儲存 (S)</span></button>
+        <button class="fm-item has-sub" id="fm-save-as">
+          <span class="fm-icon">💿</span><span>另存新檔 (A)</span><span class="fm-arrow">▶</span>
+          <div class="fm-submenu">
+            <button class="fm-item" data-saveas="png">PNG 圖片 (P)</button>
+            <button class="fm-item" data-saveas="jpeg">JPEG 圖片 (J)</button>
+            <button class="fm-item" data-saveas="bmp">BMP 圖片 (B)</button>
+            <button class="fm-item" data-saveas="gif">GIF 圖片 (G)</button>
+          </div>
+        </button>
+        <button class="fm-item" id="fm-print"><span class="fm-icon">🖨</span><span>列印 (P)</span></button>
+        <button class="fm-item" id="fm-properties"><span class="fm-icon">⚙</span><span>內容</span></button>
+        <button class="fm-item" id="fm-about"><span class="fm-icon">ℹ</span><span>關於小畫家</span></button>
+        <button class="fm-item" id="fm-exit"><span class="fm-icon">⏻</span><span>結束 (X)</span></button>
+      </div>
+      <div class="file-menu-recent">
+        <div class="fm-recent-title">最近使用的圖片</div>
+        <div class="fm-recent-list" id="fm-recent-list">
+          <div class="fm-recent-empty">無</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Workspace -->
+  <div class="workspace">
+    <div class="ruler ruler-h" id="ruler-h"></div>
+    <div class="ruler ruler-v" id="ruler-v"></div>
+    <div class="canvas-area" id="canvas-area">
+      <div class="canvas-wrapper" id="canvas-wrapper">
+        <canvas id="canvas" width="800" height="600"></canvas>
+        <canvas id="overlay" width="800" height="600"></canvas>
+        <!-- 8 resize handles -->
+        <div class="cv-handle" data-pos="n"></div>
+        <div class="cv-handle" data-pos="s"></div>
+        <div class="cv-handle" data-pos="e"></div>
+        <div class="cv-handle" data-pos="w"></div>
+        <div class="cv-handle" data-pos="ne"></div>
+        <div class="cv-handle" data-pos="nw"></div>
+        <div class="cv-handle" data-pos="se"></div>
+        <div class="cv-handle" data-pos="sw"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="statusbar" id="statusbar">
+    <div class="sb-item" id="sb-pos">📐 0, 0 px</div>
+    <div class="sb-item" id="sb-size">⤢ 800 × 600 px</div>
+    <div class="sb-item" id="sb-filesize">💾 0 KB</div>
+    <div class="sb-spacer"></div>
+    <div class="sb-zoom">
+      <button id="sb-zoom-out">−</button>
+      <input type="range" id="sb-zoom-range" min="10" max="800" value="100">
+      <button id="sb-zoom-in">+</button>
+      <span id="sb-zoom-label">100%</span>
+    </div>
+  </div>
+
+  <!-- Hidden file input for opening images -->
+  <input type="file" id="file-input" accept="image/*" style="display:none">
+
+  <!-- Color picker dialog -->
+  <div class="modal-backdrop" id="color-modal" style="display:none">
+    <div class="modal color-modal">
+      <div class="modal-title">編輯色彩</div>
+      <div class="modal-body">
+        <div class="cp-basic">
+          <div class="cp-section-title">基本色彩 (B):</div>
+          <div class="cp-grid" id="cp-basic-grid"></div>
+          <div class="cp-section-title">自訂色彩 (C):</div>
+          <div class="cp-grid" id="cp-custom-grid"></div>
+        </div>
+        <div class="cp-spectrum">
+          <canvas id="cp-square" width="240" height="200"></canvas>
+          <canvas id="cp-hue" width="20" height="200"></canvas>
+        </div>
+        <div class="cp-values">
+          <div class="cp-preview" id="cp-preview"></div>
+          <div class="cp-fields">
+            <label>色調(E): <input type="number" id="cp-h" min="0" max="360"></label>
+            <label>紅(R): <input type="number" id="cp-r" min="0" max="255"></label>
+            <label>飽和度(S): <input type="number" id="cp-s" min="0" max="100"></label>
+            <label>綠(G): <input type="number" id="cp-g" min="0" max="255"></label>
+            <label>亮度(L): <input type="number" id="cp-l" min="0" max="100"></label>
+            <label>藍(U): <input type="number" id="cp-b" min="0" max="255"></label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button id="cp-ok">確定</button>
+        <button id="cp-cancel">取消</button>
+        <button id="cp-add">新增至自訂色彩(A)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resize dialog -->
+  <div class="modal-backdrop" id="resize-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-title">重新調整大小及扭曲</div>
+      <div class="modal-body">
+        <div class="rs-section">
+          <div class="rs-section-title">重新調整大小</div>
+          <label><input type="radio" name="rs-by" value="percent" checked> 百分比 (P)</label>
+          <label><input type="radio" name="rs-by" value="pixels"> 像素 (X)</label>
+          <div class="rs-row">
+            <label>水平 (H): <input type="number" id="rs-h" value="100"></label>
+            <label>垂直 (V): <input type="number" id="rs-v" value="100"></label>
+          </div>
+          <label><input type="checkbox" id="rs-aspect" checked> 維持外觀比例 (M)</label>
+        </div>
+        <div class="rs-section">
+          <div class="rs-section-title">扭曲 (角度)</div>
+          <div class="rs-row">
+            <label>水平 (O): <input type="number" id="rs-skew-h" value="0"></label>
+            <label>垂直 (E): <input type="number" id="rs-skew-v" value="0"></label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button id="rs-ok">確定</button>
+        <button id="rs-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Properties dialog -->
+  <div class="modal-backdrop" id="props-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-title">影像內容</div>
+      <div class="modal-body">
+        <div class="pr-row">檔案大小: <span id="pr-size">0 KB</span></div>
+        <div class="pr-row">解析度: 96 DPI</div>
+        <div class="pr-section-title">單位</div>
+        <label><input type="radio" name="pr-unit" value="px" checked> 像素 (P)</label>
+        <label><input type="radio" name="pr-unit" value="in"> 英吋 (I)</label>
+        <label><input type="radio" name="pr-unit" value="cm"> 公分 (M)</label>
+        <div class="pr-section-title">色彩</div>
+        <label><input type="radio" name="pr-color" value="color" checked> 彩色 (L)</label>
+        <label><input type="radio" name="pr-color" value="bw"> 黑白 (B)</label>
+        <div class="pr-row">
+          <label>寬度 (W): <input type="number" id="pr-w" value="800"></label>
+          <label>高度 (H): <input type="number" id="pr-h" value="600"></label>
+        </div>
+      </div>
+      <div class="modal-buttons">
+        <button id="pr-ok">確定</button>
+        <button id="pr-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm new -->
+  <div class="modal-backdrop" id="confirm-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-title">小畫家</div>
+      <div class="modal-body" id="confirm-text">您要儲存對未命名的變更嗎？</div>
+      <div class="modal-buttons">
+        <button id="cf-save">儲存</button>
+        <button id="cf-discard">不要儲存</button>
+        <button id="cf-cancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- About dialog -->
+  <div class="modal-backdrop" id="about-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-title">關於小畫家</div>
+      <div class="modal-body" style="text-align:center;padding:20px">
+        <div style="font-size:48px">🎨</div>
+        <h2>小畫家 (Web 版)</h2>
+        <p>Windows 小畫家功能再現</p>
+        <p style="color:#666;font-size:12px">© 2026</p>
+      </div>
+      <div class="modal-buttons">
+        <button id="ab-ok">確定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Text input overlay -->
+  <textarea id="text-input" class="text-input" style="display:none"></textarea>
+</div>
+
+<script src="paint.js"></script>
+</body>
+</html>
