@@ -26,6 +26,13 @@ final class CanvasView: NSView {
     private var marchingPhase: CGFloat = 0
     private var marchingTimer: Timer?
 
+    // Selection resize handles
+    enum Handle { case nw, n, ne, e, se, s, sw, w }
+    private var resizingHandle: Handle? = nil
+    private var resizeStartRect: NSRect = .zero
+    private var resizeStartPoint: NSPoint = .zero
+    private let handleSize: CGFloat = 8
+
     // Text editing
     private var activeTextField: NSTextView?
     private var activeTextFont: NSFont = NSFont.systemFont(ofSize: 16)
@@ -199,6 +206,15 @@ final class CanvasView: NSView {
             NSColor.white.setStroke()
             p.setLineDash(dash, count: 2, phase: marchingPhase + 4)
             p.stroke()
+            // 8 個拖曳把手
+            for (_, hr) in handleRects(for: sel) {
+                NSColor.white.setFill()
+                NSBezierPath(rect: hr).fill()
+                NSColor.black.setStroke()
+                let hp = NSBezierPath(rect: hr)
+                hp.lineWidth = 1
+                hp.stroke()
+            }
         } else if let path = selectionPath {
             let dash: [CGFloat] = [4, 4]
             path.lineWidth = 1
@@ -257,6 +273,56 @@ final class CanvasView: NSView {
         dragButton == 1 ? PaintState.shared.color1 : PaintState.shared.color2
     }
 
+    // MARK: - Selection handle geometry
+
+    private func handleRects(for sel: NSRect) -> [(Handle, NSRect)] {
+        let s = handleSize
+        let mx = sel.midX, my = sel.midY
+        let l = sel.minX, r = sel.maxX, t = sel.maxY, b = sel.minY
+        @inline(__always) func mk(_ cx: CGFloat, _ cy: CGFloat) -> NSRect {
+            NSRect(x: cx - s/2, y: cy - s/2, width: s, height: s)
+        }
+        return [
+            (.nw, mk(l, t)), (.n, mk(mx, t)), (.ne, mk(r, t)),
+            (.e,  mk(r, my)),
+            (.se, mk(r, b)), (.s, mk(mx, b)), (.sw, mk(l, b)),
+            (.w,  mk(l, my)),
+        ]
+    }
+    private func handleAt(_ p: NSPoint) -> Handle? {
+        guard let sel = selectionRect else { return nil }
+        for (h, hr) in handleRects(for: sel) {
+            if hr.insetBy(dx: -2, dy: -2).contains(p) { return h }
+        }
+        return nil
+    }
+    private func applyResize(_ h: Handle, to p: NSPoint) {
+        var r = resizeStartRect
+        switch h {
+        case .nw:
+            r = NSRect(x: p.x, y: r.minY, width: r.maxX - p.x, height: p.y - r.minY)
+        case .n:
+            r = NSRect(x: r.minX, y: r.minY, width: r.width, height: p.y - r.minY)
+        case .ne:
+            r = NSRect(x: r.minX, y: r.minY, width: p.x - r.minX, height: p.y - r.minY)
+        case .e:
+            r = NSRect(x: r.minX, y: r.minY, width: p.x - r.minX, height: r.height)
+        case .se:
+            r = NSRect(x: r.minX, y: p.y, width: p.x - r.minX, height: r.maxY - p.y)
+        case .s:
+            r = NSRect(x: r.minX, y: p.y, width: r.width, height: r.maxY - p.y)
+        case .sw:
+            r = NSRect(x: p.x, y: p.y, width: r.maxX - p.x, height: r.maxY - p.y)
+        case .w:
+            r = NSRect(x: p.x, y: r.minY, width: r.maxX - p.x, height: r.height)
+        }
+        // 維持最小尺寸 (避免反折)
+        if r.width < 4 { r.size.width = 4 }
+        if r.height < 4 { r.size.height = 4 }
+        selectionRect = r
+        needsDisplay = true
+    }
+
     // MARK: - Mouse handling
 
     override func mouseDown(with event: NSEvent) {
@@ -295,12 +361,21 @@ final class CanvasView: NSView {
         let tool = PaintState.shared.tool
         let pc = clampToCanvas(p)
 
-        // If a selection exists and the user clicks inside it, begin moving.
+        // 1) 若已有 selection，先檢查是否點到 resize 把手
+        if let _ = selectionRect, let h = handleAt(p) {
+            resizingHandle = h
+            resizeStartRect = selectionRect!
+            resizeStartPoint = p
+            return
+        }
+        // 2) 點在 selection 內部 → 開始拖移
         if let sel = selectionRect, sel.contains(pc) {
             movingSelection = true
             moveOffset = NSPoint(x: pc.x - sel.origin.x, y: pc.y - sel.origin.y)
             return
-        } else if selectionRect != nil {
+        }
+        // 3) 點到 selection 外面 → commit 並繼續處理當前工具
+        if selectionRect != nil {
             commitSelection()
         }
 
@@ -368,6 +443,10 @@ final class CanvasView: NSView {
             name: PaintState.statusUpdate, object: nil,
             userInfo: ["x": Int(pc.x), "y": Int(CGFloat(bitmap.pixelsHigh) - pc.y)]
         )
+        if let h = resizingHandle {
+            applyResize(h, to: p)
+            return
+        }
         if movingSelection, var sel = selectionRect {
             sel.origin = NSPoint(x: pc.x - moveOffset.x, y: pc.y - moveOffset.y)
             selectionRect = sel
@@ -399,6 +478,10 @@ final class CanvasView: NSView {
 
     private func handleMouseUp(_ p: NSPoint, event: NSEvent) {
         let pc = clampToCanvas(p)
+        if resizingHandle != nil {
+            resizingHandle = nil
+            return
+        }
         if movingSelection {
             movingSelection = false
             return
@@ -470,6 +553,32 @@ final class CanvasView: NSView {
 
     // MARK: - Fill (flood fill)
 
+    /// 給單元測試呼叫的版本（使用 *視覺座標*，原點左下）。
+    func testFloodFill(at p: NSPoint, with color: NSColor) {
+        floodFill(at: p, with: color)
+    }
+
+    /// 給單元測試用：模擬把手 hit-test。
+    func testHandleAt(_ p: NSPoint) -> Handle? { handleAt(p) }
+
+    /// 給單元測試用：模擬指定把手拖到某點。
+    func testBeginResize(handle: Handle, startRect: NSRect, startPoint: NSPoint) {
+        resizingHandle = handle
+        resizeStartRect = startRect
+        resizeStartPoint = startPoint
+    }
+    func testApplyResize(to p: NSPoint) {
+        guard let h = resizingHandle else { return }
+        applyResize(h, to: p)
+    }
+    func testEndResize() { resizingHandle = nil }
+
+    /// 對外暴露的選取建立 helper（給測試模擬使用者拖選矩形）。
+    func testSetRectangularSelection(_ rect: NSRect) {
+        commitSelection()
+        liftSelection(rect: rect)
+    }
+
     private func floodFill(at p: NSPoint, with color: NSColor) {
         let x = Int(p.x), y = Int(CGFloat(bitmap.pixelsHigh) - p.y)
         guard x >= 0, x < bitmap.pixelsWide, y >= 0, y < bitmap.pixelsHigh else { return }
@@ -492,12 +601,17 @@ final class CanvasView: NSView {
 
         var stack: [(Int, Int)] = [(x, y)]
         while let (cx, cy) = stack.popLast() {
+            // 同一像素可能從不同列被 push 兩次；pop 時已被先前的 scan 填過
+            // 此時起始像素不再 match，會讓 lx > rx 造成 Range crash，直接跳過。
+            guard matches(idx(cx, cy)) else { continue }
+
             var lx = cx
             while lx >= 0, matches(idx(lx, cy)) { lx -= 1 }
             lx += 1
             var rx = cx
             while rx < w, matches(idx(rx, cy)) { rx += 1 }
             rx -= 1
+            if lx > rx { continue }
             for xi in lx...rx {
                 let i = idx(xi, cy)
                 data[i] = nr; data[i+1] = ng; data[i+2] = nb; data[i+3] = na

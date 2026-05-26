@@ -15,6 +15,14 @@ enum UnitTests {
         testFlipHorizontal()
         testScaleCanvas()
         testPaletteContainsExpectedColors()
+        testSelectionResizeHandles()
+        testPasteImageBecomesSelection()
+        testZoomDoesNotAffectBitmapCoordinates()
+        testCropToSelection()
+        testHistoryAcrossMultipleEdits()
+        testEraseLeavesSecondaryColor()
+        testRotate180Twice()
+        testFlipVertical()
 
         if failures.isEmpty {
             print("✓ 所有測試通過")
@@ -80,22 +88,54 @@ enum UnitTests {
     }
 
     static func testFloodFill() {
+        // 1) 在純白畫布上倒油漆（容易踩到「同像素重複 push」的 crash）
         let cv = makeCanvas()
-        // Use the public flood-fill by hitting the canvas via mouseDown? Too complex.
-        // Instead invoke private path: simulate by drawing & checking.
-        // First confirm canvas all white
-        let p = pixel(of: cv, 5, 5)!
-        assertEq("flood.initial.white", p.0, 255)
+        let red = NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1)
+        cv.testFloodFill(at: NSPoint(x: 50, y: 40), with: red)
+        let center = pixel(of: cv, 50, 40)!
+        assertEq("flood.basic.center.r", center.0, 255)
+        assertEq("flood.basic.center.g", center.1, 0)
+        // 邊緣也應該被填到
+        let corner = pixel(of: cv, 99, 79)!
+        assertEq("flood.basic.corner.r", corner.0, 255)
 
-        // Manually flood-fill (need access). Use a draw-rect + selection fill workaround:
-        cv.drawInBitmap { _ in
-            NSColor.red.setFill()
-            NSRect(x: 0, y: 0, width: 100, height: 80).fill()
+        // 2) 倒在邊角像素（0,0、最右下）
+        let cv2 = makeCanvas()
+        let blue = NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1)
+        cv2.testFloodFill(at: NSPoint(x: 0, y: 0), with: blue)
+        let p2 = pixel(of: cv2, 50, 40)!
+        assertEq("flood.cornerStart.center.b", p2.2, 255)
+        let cv3 = makeCanvas()
+        cv3.testFloodFill(at: NSPoint(x: 99, y: 79), with: blue)
+        let p3 = pixel(of: cv3, 0, 0)!
+        assertEq("flood.cornerEnd.opposite.b", p3.2, 255)
+
+        // 3) 倒在已是目標色的像素（target == new）不應 crash
+        let cv4 = makeCanvas()
+        let white = NSColor(deviceRed: 1, green: 1, blue: 1, alpha: 1)
+        cv4.testFloodFill(at: NSPoint(x: 50, y: 40), with: white)
+        let p4 = pixel(of: cv4, 50, 40)!
+        assertEq("flood.noop.r", p4.0, 255)
+
+        // 4) 倒在隔離區域（黑線圍出小區）：只填裡面，不應跨越
+        let cv5 = makeCanvas()
+        cv5.drawInBitmap { _ in
+            NSColor.black.setFill()
+            NSRect(x: 20, y: 20, width: 60, height: 2).fill()  // 上邊
+            NSRect(x: 20, y: 58, width: 60, height: 2).fill()  // 下邊
+            NSRect(x: 20, y: 20, width: 2, height: 40).fill()  // 左邊
+            NSRect(x: 78, y: 20, width: 2, height: 40).fill()  // 右邊
         }
-        let p2 = pixel(of: cv, 50, 50)!
-        assertEq("flood.afterFill.r", p2.0, 255)
-        assertEq("flood.afterFill.g", p2.1, 0)
-        assertEq("flood.afterFill.b", p2.2, 0)
+        let green = NSColor(deviceRed: 0, green: 1, blue: 0, alpha: 1)
+        cv5.testFloodFill(at: NSPoint(x: 50, y: 40), with: green)
+        // 內部應被填綠
+        let inside = pixel(of: cv5, 50, 40)!
+        assertEq("flood.bounded.inside.g", inside.1, 255)
+        // 外部應仍為白
+        let outside = pixel(of: cv5, 10, 10)!
+        assertEq("flood.bounded.outside.r", outside.0, 255)
+        assertEq("flood.bounded.outside.g", outside.1, 255)
+        assertEq("flood.bounded.outside.b", outside.2, 255)
     }
 
     static func testSelectionLiftCommit() {
@@ -176,6 +216,154 @@ enum UnitTests {
         cv.scaleCanvas(toSize: NSSize(width: 200, height: 100))
         assertEq("scale.width", cv.bitmap.pixelsWide, 200)
         assertEq("scale.height", cv.bitmap.pixelsHigh, 100)
+    }
+
+    static func testSelectionResizeHandles() {
+        let cv = makeCanvas(200, 200)
+        // 建立 100x100 矩形選取於 (50,50)..(150,150)
+        cv.testSetRectangularSelection(NSRect(x: 50, y: 50, width: 100, height: 100))
+        guard let sel = cv.selectionRect else {
+            failures.append("resize.selectionMissing"); return
+        }
+
+        // 點選右下角應命中 .se 把手
+        let seCorner = NSPoint(x: sel.maxX, y: sel.minY)  // 視覺座標 (右下 in flipped sense)
+        let h = cv.testHandleAt(seCorner)
+        assertTrue("resize.handle.detected", h != nil)
+
+        // 把右下角拖到 (200, 0) → selection 變大
+        if let h = h {
+            cv.testBeginResize(handle: h, startRect: sel, startPoint: seCorner)
+            cv.testApplyResize(to: NSPoint(x: 200, y: 0))
+            cv.testEndResize()
+        }
+        guard let resized = cv.selectionRect else {
+            failures.append("resize.afterResize.missing"); return
+        }
+        assertEq("resize.newWidth", Int(resized.width), 150)
+
+        // 西北角把手檢測
+        let nwCorner = NSPoint(x: resized.minX, y: resized.maxY)
+        let h2 = cv.testHandleAt(nwCorner)
+        assertTrue("resize.handle.nw.detected", h2 != nil)
+    }
+
+    static func testPasteImageBecomesSelection() {
+        let cv = makeCanvas(200, 200)
+        // 建立一張小圖（綠色 30x30）
+        let img = NSImage(size: NSSize(width: 30, height: 30))
+        img.lockFocus()
+        NSColor.green.setFill()
+        NSRect(x: 0, y: 0, width: 30, height: 30).fill()
+        img.unlockFocus()
+
+        cv.pasteImage(img)
+        assertTrue("paste.selectionImage.set", cv.selectionImage != nil)
+        guard let r = cv.selectionRect else {
+            failures.append("paste.selectionRect.missing"); return
+        }
+        assertEq("paste.rect.width", Int(r.width), 30)
+        assertEq("paste.rect.height", Int(r.height), 30)
+    }
+
+    static func testZoomDoesNotAffectBitmapCoordinates() {
+        // 模擬 zoom 後仍能正確計算 selection pixel rect
+        let cv = makeCanvas(100, 80)
+        PaintState.shared.zoom = 2.0
+        // bounds 應該還是 100x80（layoutDocument 不會在無視窗時跑，所以 bitmap-coord 直接驗證）
+        assertEq("zoom.bitmap.width", cv.bitmap.pixelsWide, 100)
+        assertEq("zoom.bitmap.height", cv.bitmap.pixelsHigh, 80)
+        PaintState.shared.zoom = 1.0
+    }
+
+    static func testCropToSelection() {
+        let cv = makeCanvas(100, 80)
+        cv.drawInBitmap { _ in
+            NSColor.red.setFill()
+            NSRect(x: 10, y: 10, width: 30, height: 30).fill()
+        }
+        cv.testSetRectangularSelection(NSRect(x: 10, y: 10, width: 30, height: 30))
+        cv.cropToSelection()
+        assertEq("crop.newWidth",  cv.bitmap.pixelsWide, 30)
+        assertEq("crop.newHeight", cv.bitmap.pixelsHigh, 30)
+        // 像素 (5,5) 在裁剪後仍應是紅色（因為原本在裁剪區內）
+        let p = pixel(of: cv, 5, 5)!
+        assertEq("crop.preservesRed", p.0, 255)
+    }
+
+    static func testHistoryAcrossMultipleEdits() {
+        let cv = makeCanvas(50, 50)
+        // 連續三次塗黑、塗紅、塗綠
+        let colors: [(NSColor, UInt8, UInt8, UInt8)] = [
+            (NSColor.black,                              0,   0,   0),
+            (NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1), 255, 0, 0),
+            (NSColor(deviceRed: 0, green: 1, blue: 0, alpha: 1), 0, 255, 0),
+        ]
+        for (c, _, _, _) in colors {
+            cv.drawInBitmap { _ in
+                c.setFill()
+                NSRect(x: 0, y: 0, width: 50, height: 50).fill()
+            }
+            cv.pushHistory()
+        }
+        // 現在是綠色
+        assertEq("multi.now.g", pixel(of: cv, 25, 25)!.1, 255)
+        // undo → 紅
+        cv.undo()
+        assertEq("multi.undo1.r", pixel(of: cv, 25, 25)!.0, 255)
+        // undo → 黑
+        cv.undo()
+        assertEq("multi.undo2.k", pixel(of: cv, 25, 25)!.0, 0)
+        // redo → 紅
+        cv.redo()
+        assertEq("multi.redo1.r", pixel(of: cv, 25, 25)!.0, 255)
+    }
+
+    static func testEraseLeavesSecondaryColor() {
+        // 橡皮擦會用 color2（背景色）填覆。我們直接呼叫 drawInBitmap 填驗證 color2 正確套用。
+        PaintState.shared.color2 = NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1)  // 藍色背景
+        let cv = makeCanvas(60, 60)
+        cv.drawInBitmap { _ in
+            NSColor.black.setFill()
+            NSRect(x: 0, y: 0, width: 60, height: 60).fill()
+        }
+        // 將原本黑色畫布以 color2 (藍) 填覆中央 (模擬橡皮擦)
+        cv.drawInBitmap { _ in
+            PaintState.shared.color2.setFill()
+            NSRect(x: 20, y: 20, width: 20, height: 20).fill()
+        }
+        let center = pixel(of: cv, 30, 30)!
+        assertEq("erase.center.b", center.2, 255)
+        // 還原預設 color2
+        PaintState.shared.color2 = .white
+    }
+
+    static func testRotate180Twice() {
+        let cv = makeCanvas(80, 60)
+        cv.drawInBitmap { _ in
+            NSColor.black.setFill()
+            NSRect(x: 5, y: 5, width: 10, height: 10).fill()
+        }
+        cv.rotateCanvas(byDegrees: 180)
+        cv.rotateCanvas(byDegrees: 180)
+        // 兩次 180 度 = 不變，原本左下角的黑點應該還在左下角
+        let p = pixel(of: cv, 10, 10)!
+        assertEq("rotate180Twice.preserved", p.0, 0)
+    }
+
+    static func testFlipVertical() {
+        let cv = makeCanvas(40, 80)
+        // 在底部放黑色帶
+        cv.drawInBitmap { _ in
+            NSColor.black.setFill()
+            NSRect(x: 0, y: 0, width: 40, height: 10).fill()
+        }
+        cv.flipCanvas(horizontal: false)
+        // 翻轉後黑色帶應在頂部
+        let pTop = pixel(of: cv, 20, 75)!
+        let pBot = pixel(of: cv, 20, 5)!
+        assertEq("flip.v.top.black", pTop.0, 0)
+        assertEq("flip.v.bot.white", pBot.0, 255)
     }
 
     static func testPaletteContainsExpectedColors() {

@@ -120,8 +120,10 @@ final class MainWindowController: NSWindowController {
     private func layoutDocument() {
         guard let docView = scrollView.documentView else { return }
         let zoom = PaintState.shared.zoom
-        let w = CGFloat(canvas.bitmap.pixelsWide) * zoom
-        let h = CGFloat(canvas.bitmap.pixelsHigh) * zoom
+        let pxW = CGFloat(canvas.bitmap.pixelsWide)
+        let pxH = CGFloat(canvas.bitmap.pixelsHigh)
+        let w = pxW * zoom
+        let h = pxH * zoom
         let cs = scrollView.contentSize
         let dw = max(w + 40, cs.width)
         let dh = max(h + 40, cs.height)
@@ -131,6 +133,9 @@ final class MainWindowController: NSWindowController {
             y: (dh - h) / 2,
             width: w, height: h
         )
+        // 保持 bounds 為原生像素尺寸：bitmap 視覺被自動縮放成 frame.size，
+        // 而所有滑鼠事件、選取/繪圖座標都以像素為單位（與縮放無關）。
+        canvas.setBoundsSize(NSSize(width: pxW, height: pxH))
         canvas.needsDisplay = true
     }
 
@@ -367,10 +372,25 @@ final class StatusBarView: NSView {
         }
         zoomSlider.target = self
         zoomSlider.action = #selector(zoomChanged(_:))
+        zoomSlider.isContinuous = true
         zoomSlider.controlSize = .small
         addSubview(zoomSlider)
+
+        // 聆聽 zoom 變化以即時更新百分比 (例如選單放大/縮小或滑桿拖曳)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(syncFromState),
+            name: PaintState.zoomChanged, object: nil
+        )
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func syncFromState() {
+        let pct = Int(PaintState.shared.zoom * 100)
+        zoomLabel.stringValue = "\(pct)%"
+        if Int(zoomSlider.doubleValue) != pct {
+            zoomSlider.doubleValue = Double(pct)
+        }
+    }
 
     override func layout() {
         super.layout()
