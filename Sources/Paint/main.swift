@@ -47,7 +47,7 @@ if args.count >= 3, args[1] == "--text-demo" {
     let ok = UISnapshot.renderTextDemo(outputPath: args[2])
     exit(ok ? 0 : 1)
 }
-if args[1] == "--cursor-debug" {
+if args.count >= 2, args[1] == "--cursor-debug" {
     _ = NSApplication.shared
     let cur = Cursors.cursor(for: .selectRect)
     let img = cur.image
