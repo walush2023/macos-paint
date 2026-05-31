@@ -388,18 +388,18 @@ enum UnitTests {
     }
 
     static func testCursorMapping() {
-        // 文字 → I-beam，選取/形狀 → 十字
+        // 文字 → 系統 I-beam
         assertTrue("cursor.text.iBeam", Cursors.cursor(for: .text) === NSCursor.iBeam)
-        assertTrue("cursor.select.crosshair", Cursors.cursor(for: .selectRect) === NSCursor.crosshair)
-        assertTrue("cursor.shape.crosshair", Cursors.cursor(for: .shape) === NSCursor.crosshair)
-        // 繪圖工具應有自訂游標（非 arrow），且同工具回傳同一快取實例
-        let pencil1 = Cursors.cursor(for: .pencil)
-        let pencil2 = Cursors.cursor(for: .pencil)
-        assertTrue("cursor.pencil.cached", pencil1 === pencil2)
-        assertTrue("cursor.fill.notArrow", Cursors.cursor(for: .fill) !== NSCursor.arrow)
-        assertTrue("cursor.eraser.notArrow", Cursors.cursor(for: .eraser) !== NSCursor.arrow)
-        assertTrue("cursor.picker.notArrow", Cursors.cursor(for: .picker) !== NSCursor.arrow)
-        assertTrue("cursor.magnifier.notArrow", Cursors.cursor(for: .magnifier) !== NSCursor.arrow)
+        // 其餘工具皆為自訂游標（非系統 arrow），且同工具回傳同一快取實例
+        let drawingTools: [Tool] = [.pencil, .brush, .fill, .eraser, .picker, .magnifier, .selectRect, .shape]
+        for t in drawingTools {
+            let c1 = Cursors.cursor(for: t)
+            let c2 = Cursors.cursor(for: t)
+            assertTrue("cursor.\(t).notArrow", c1 !== NSCursor.arrow)
+            assertTrue("cursor.\(t).cached", c1 === c2)
+            // 自訂游標應帶有非零尺寸的影像
+            assertTrue("cursor.\(t).hasImage", c1.image.size.width > 0)
+        }
     }
 
     static func testFillTolerance() {
