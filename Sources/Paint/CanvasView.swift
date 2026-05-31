@@ -262,20 +262,39 @@ final class CanvasView: NSView {
     }
 
     /// 變更畫布尺寸但**不縮放內容**（延伸時補白底、縮小時裁切），內容左上對齊。
-    /// 供畫布邊角拖拉調整大小使用。
+    /// 以拖拉開始時的原始內容為基準重繪，產生單一歷史步驟。
     func resizeCanvasKeepingContent(to newSize: NSSize) {
+        beginCanvasResize()
+        previewCanvasResize(to: newSize)
+        endCanvasResize()
+    }
+
+    // MARK: - 畫布大小拖拉 session（內容不縮放，左上對齊）
+
+    private var resizeBaseImage: NSImage?
+    private var resizeBaseHeight: CGFloat = 0
+
+    /// 開始一次畫布縮放：記住目前內容作為基準。
+    func beginCanvasResize() {
         commitSelection()
+        resizeBaseImage = currentBitmapImage()
+        resizeBaseHeight = CGFloat(bitmap.pixelsHigh)
+    }
+    /// 拖拉中即時預覽新尺寸（不寫歷史）。內容以基準影像左上對齊重繪。
+    func previewCanvasResize(to newSize: NSSize) {
+        guard let base = resizeBaseImage else { return }
         let w = max(1, newSize.width.rounded()), h = max(1, newSize.height.rounded())
-        let target = NSSize(width: w, height: h)
-        let oldImage = currentBitmapImage()
-        let oldH = CGFloat(bitmap.pixelsHigh)
-        guard let rep = makeBlankRep(size: target, fill: .white) else { return }
+        guard let rep = makeBlankRep(size: NSSize(width: w, height: h), fill: .white) else { return }
         installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
-            // 內容左上對齊：底圖原尺寸畫在新畫布頂端（左下原點 → y 偏移 = 新高 - 舊高）
-            let origin = NSPoint(x: 0, y: h - oldH)
-            oldImage.draw(at: origin, from: .zero, operation: .sourceOver, fraction: 1.0)
+            base.draw(at: NSPoint(x: 0, y: h - resizeBaseHeight),
+                      from: .zero, operation: .sourceOver, fraction: 1.0)
         }
+    }
+    /// 結束縮放：寫入單一歷史步驟。
+    func endCanvasResize() {
+        guard resizeBaseImage != nil else { return }
+        resizeBaseImage = nil
         pushHistory()
     }
 

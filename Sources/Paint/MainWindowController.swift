@@ -14,6 +14,13 @@ final class MainWindowController: NSWindowController {
     private let ribbonHeight: CGFloat = 110
     private let statusBarHeight: CGFloat = 24
 
+    // 畫布大小調整把手（右/下/右下角）
+    private var rightHandle: CanvasResizeHandle?
+    private var bottomHandle: CanvasResizeHandle?
+    private var cornerHandle: CanvasResizeHandle?
+    private var resizeBaseSize: NSSize = .zero
+    private var resizeStartWin: NSPoint = .zero
+
     init() {
         let win = NSWindow(
             contentRect: NSRect(x: 80, y: 80, width: 1280, height: 800),
@@ -96,6 +103,44 @@ final class MainWindowController: NSWindowController {
             }
         }
         docView.addSubview(canvas)
+
+        // 建立 3 個畫布大小調整把手
+        let right = CanvasResizeHandle(pos: .right)
+        let bottom = CanvasResizeHandle(pos: .bottom)
+        let corner = CanvasResizeHandle(pos: .corner)
+        for hv in [right, bottom, corner] {
+            hv.onBegin = { [weak self] win in self?.beginCanvasResize(at: win) }
+            hv.onDrag = { [weak self] win, pos in self?.dragCanvasResize(to: win, pos: pos) }
+            hv.onEnd = { [weak self] in self?.endCanvasResize() }
+            docView.addSubview(hv)
+        }
+        rightHandle = right; bottomHandle = bottom; cornerHandle = corner
+        layoutResizeHandles()
+    }
+
+    // MARK: - 畫布大小拖拉
+
+    private func beginCanvasResize(at win: NSPoint) {
+        resizeBaseSize = PaintState.shared.canvasSize
+        resizeStartWin = win
+        canvas.beginCanvasResize()
+    }
+    private func dragCanvasResize(to win: NSPoint, pos: CanvasResizeHandle.Pos) {
+        let zoom = PaintState.shared.zoom
+        let dx = (win.x - resizeStartWin.x) / zoom    // 視窗 y 向上：往下拖 dy<0 → 變高
+        let dy = (win.y - resizeStartWin.y) / zoom
+        var newW = resizeBaseSize.width
+        var newH = resizeBaseSize.height
+        if pos == .right || pos == .corner { newW = resizeBaseSize.width + dx }
+        if pos == .bottom || pos == .corner { newH = resizeBaseSize.height - dy }
+        newW = max(1, newW.rounded())
+        newH = max(1, newH.rounded())
+        canvas.previewCanvasResize(to: NSSize(width: newW, height: newH))
+        // canvasResized 通知會觸發 layoutDocument → 重新定位把手
+    }
+    private func endCanvasResize() {
+        canvas.endCanvasResize()
+        markDirty()
     }
 
     private func selectTab(_ tab: TabBarView.Tab) {
@@ -133,6 +178,7 @@ final class MainWindowController: NSWindowController {
         window?.title = "\(base)\(isDirty ? " *" : "") - 小畫家"
     }
 
+    private let canvasMargin: CGFloat = 10
     private func layoutDocument() {
         guard let docView = scrollView.documentView else { return }
         let zoom = PaintState.shared.zoom
@@ -141,18 +187,26 @@ final class MainWindowController: NSWindowController {
         let w = pxW * zoom
         let h = pxH * zoom
         let cs = scrollView.contentSize
-        let dw = max(w + 40, cs.width)
-        let dh = max(h + 40, cs.height)
+        let pad = canvasMargin + 24   // 右/下保留把手空間
+        let dw = max(w + canvasMargin + pad, cs.width)
+        let dh = max(h + canvasMargin + pad, cs.height)
         docView.frame = NSRect(x: 0, y: 0, width: dw, height: dh)
-        canvas.frame = NSRect(
-            x: (dw - w) / 2,
-            y: (dh - h) / 2,
-            width: w, height: h
-        )
-        // 保持 bounds 為原生像素尺寸：bitmap 視覺被自動縮放成 frame.size，
-        // 而所有滑鼠事件、選取/繪圖座標都以像素為單位（與縮放無關）。
+        // 左上對齊（docView 非翻轉，左下原點 → 內容靠頂端）
+        let originY = dh - canvasMargin - h
+        canvas.frame = NSRect(x: canvasMargin, y: originY, width: w, height: h)
+        // bounds 保持原生像素尺寸：bitmap 視覺被自動縮放成 frame.size，
+        // 滑鼠/選取/繪圖座標皆以像素為單位（與縮放無關）。
         canvas.setBoundsSize(NSSize(width: pxW, height: pxH))
         canvas.needsDisplay = true
+        layoutResizeHandles()
+    }
+
+    private func layoutResizeHandles() {
+        let f = canvas.frame
+        // 右(中)、下(中)、右下角
+        rightHandle?.frame = NSRect(x: f.maxX - 1, y: f.midY - 4, width: 8, height: 8)
+        bottomHandle?.frame = NSRect(x: f.midX - 4, y: f.minY - 7, width: 8, height: 8)
+        cornerHandle?.frame = NSRect(x: f.maxX - 1, y: f.minY - 7, width: 8, height: 8)
     }
 
     @objc private func handleZoomChanged() { layoutDocument() }
@@ -486,5 +540,52 @@ final class StatusBarView: NSView {
     private func applyZoomPct(_ pct: Double) {
         PaintState.shared.zoom = CGFloat(pct / 100.0)
         NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
+    }
+}
+
+// MARK: - 畫布大小調整把手
+
+/// 畫布右/下/右下角的小白方塊，拖拉以調整畫布尺寸（不縮放內容）。
+final class CanvasResizeHandle: NSView {
+    enum Pos { case right, bottom, corner }
+    let pos: Pos
+    var onBegin: ((NSPoint) -> Void)?          // 視窗座標起點
+    var onDrag: ((NSPoint, Pos) -> Void)?      // 目前視窗座標 + 位置
+    var onEnd: (() -> Void)?
+
+    init(pos: Pos) {
+        self.pos = pos
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.white.setFill()
+        NSBezierPath(rect: bounds).fill()
+        NSColor(white: 0.35, alpha: 1).setStroke()
+        let p = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
+        p.lineWidth = 1
+        p.stroke()
+    }
+
+    override func resetCursorRects() {
+        let cursor: NSCursor
+        switch pos {
+        case .right:  cursor = Cursors.resizeEW
+        case .bottom: cursor = Cursors.resizeNS
+        case .corner: cursor = Cursors.resizeNWSE
+        }
+        addCursorRect(bounds, cursor: cursor)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onBegin?(event.locationInWindow)
+    }
+    override func mouseDragged(with event: NSEvent) {
+        onDrag?(event.locationInWindow, pos)
+    }
+    override func mouseUp(with event: NSEvent) {
+        onEnd?()
     }
 }

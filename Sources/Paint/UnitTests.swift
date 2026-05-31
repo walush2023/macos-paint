@@ -37,6 +37,7 @@ enum UnitTests {
             ("undoAcrossOverlay",  testUndoAcrossOverlay),
             ("undoAcrossRotate",   testUndoAcrossRotate),
             ("resizeKeepsContent", testResizeKeepsContent),
+            ("canvasResizeDrag",   testCanvasResizeDragUsesBase),
         ]
         for (_, fn) in tests { fn() }
 
@@ -632,6 +633,26 @@ enum UnitTests {
         // undo 還原
         cv.undo()
         assertEq("resizeKeep.undo.w", cv.bitmap.pixelsWide, 60)
+    }
+
+    static func testCanvasResizeDragUsesBase() {
+        // 拖拉縮放：先縮小再放大，應以「拖拉起始的原始內容」為基準重繪，而非逐步裁切
+        let cv = makeCanvas(60, 40)
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 60, height: 40).fill()
+        }
+        cv.pushHistory()
+        cv.beginCanvasResize()
+        cv.previewCanvasResize(to: NSSize(width: 30, height: 40))   // 縮小（裁掉右半）
+        cv.previewCanvasResize(to: NSSize(width: 80, height: 40))   // 再放大
+        cv.endCanvasResize()
+        assertEq("resizeDrag.w", cv.bitmap.pixelsWide, 80)
+        // 原始 (50,20) 在原圖是紅；若用裁切後的 30 重繪這裡會變白 → 驗證用的是原始基準
+        assertEq("resizeDrag.base.red", pixel(of: cv, 50, 20)!.0, 255)
+        // 一次拖拉只產生一個歷史步驟：undo 回到 60 寬
+        cv.undo()
+        assertEq("resizeDrag.undo.w", cv.bitmap.pixelsWide, 60)
     }
 
     static func testPaletteContainsExpectedColors() {
