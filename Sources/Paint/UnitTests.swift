@@ -31,6 +31,7 @@ enum UnitTests {
             ("coverTransparent",   testCoverTransparentWithOpaque),
             ("transparentEraser",  testTransparentEraser),
             ("pngPreservesAlpha",  testPNGPreservesAlpha),
+            ("loadPreservesAlpha", testLoadPreservesAlpha),
         ]
         for (_, fn) in tests { fn() }
 
@@ -487,6 +488,32 @@ enum UnitTests {
         let blue = rep.colorAt(x: 18, y: 30 - 1 - 15)
         assertTrue("png.opaque.kept", (blue?.alphaComponent ?? 0) > 0.98)
         assertTrue("png.opaque.isBlue", (blue?.blueComponent ?? 0) > 0.9)
+    }
+
+    static func testLoadPreservesAlpha() {
+        // 造一張：整面透明 + 中央不透明紅塊 的 PNG
+        let src = makeCanvas(40, 30)
+        src.testFloodFill(at: NSPoint(x: 5, y: 5), with: .paintTransparent)
+        src.drawInBitmap { _ in
+            NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+            NSRect(x: 10, y: 8, width: 16, height: 14).fill()
+        }
+        guard let data = src.exportData(fileType: .png) else { failures.append("load.export.fail"); return }
+        let path = NSTemporaryDirectory() + "paint-load-alpha.png"
+        try? data.write(to: URL(fileURLWithPath: path))
+        guard let img = NSImage(contentsOfFile: path) else { failures.append("load.read.fail"); return }
+
+        // 開啟（載入）到另一個畫布 — 透明應被保留，而非變白
+        let dst = makeCanvas(10, 10)
+        dst.loadImage(img)
+        assertEq("load.size.w", dst.bitmap.pixelsWide, 40)
+        assertEq("load.size.h", dst.bitmap.pixelsHigh, 30)
+        // 透明角落 alpha 仍為 0（修正前會變成 255 白色）
+        assertEq("load.transparent.kept.alpha", pixel(of: dst, 2, 2)!.3, 0)
+        // 紅塊保持不透明
+        let red = pixel(of: dst, 18, 15)!
+        assertEq("load.opaque.kept.alpha", red.3, 255)
+        assertEq("load.opaque.kept.red", red.0, 255)
     }
 
     static func testPaletteContainsExpectedColors() {

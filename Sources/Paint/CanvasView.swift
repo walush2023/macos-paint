@@ -194,10 +194,20 @@ final class CanvasView: NSView {
     // MARK: - Loading / saving images
 
     func loadImage(_ image: NSImage) {
-        let size = image.size
-        resetCanvas(size: size, fill: .white)
-        drawInBitmap { _ in
-            image.draw(in: NSRect(origin: .zero, size: size))
+        // 取真實像素尺寸（避免 DPI metadata 影響）。
+        var pxW = Int(image.size.width.rounded())
+        var pxH = Int(image.size.height.rounded())
+        if let rep = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first,
+           rep.pixelsWide > 0, rep.pixelsHigh > 0 {
+            pxW = rep.pixelsWide; pxH = rep.pixelsHigh
+        }
+        let size = NSSize(width: max(1, pxW), height: max(1, pxH))
+        // 以「透明」為底，並用 .copy 原樣搬入像素 → 保留來源圖片的 alpha。
+        resetCanvas(size: size, fill: .clear)
+        drawInBitmap { ctx in
+            ctx.compositingOperation = .copy
+            image.draw(in: NSRect(origin: .zero, size: size),
+                       from: .zero, operation: .copy, fraction: 1.0)
         }
         history.reset(initial: copyBitmap(bitmap))
         needsDisplay = true
