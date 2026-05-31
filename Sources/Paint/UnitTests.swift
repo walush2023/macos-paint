@@ -44,6 +44,7 @@ enum UnitTests {
             ("newClearsFloating",  testNewClearsFloating),
             ("undoRemovesFloat",   testUndoRemovesFloatingInsert),
             ("cropKeepsAlpha",     testCropPreservesTransparency),
+            ("roundedIcon",        testRoundedIcon),
         ]
         for (_, fn) in tests { fn() }
 
@@ -778,6 +779,30 @@ enum UnitTests {
         assertEq("crop.center.opaque", center.3, 255)
         // 角落 (裁剪後 2,2 → 原透明區) 應保持透明 alpha=0，而非變白
         assertEq("crop.corner.transparent", pixel(of: cv, 2, 2)!.3, 0)
+    }
+
+    static func testRoundedIcon() {
+        // 造一張全紅方形來源 png
+        let src = makeCanvas(64, 64)
+        src.drawInBitmap { _ in
+            NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 64, height: 64).fill()
+        }
+        guard let inData = src.exportData(fileType: .png) else { failures.append("icon.src.fail"); return }
+        let inPath = NSTemporaryDirectory() + "icon-src.png"
+        let outPath = NSTemporaryDirectory() + "icon-out.png"
+        try? inData.write(to: URL(fileURLWithPath: inPath))
+
+        let ok = IconMaker.makeRoundedIcon(input: inPath, output: outPath)
+        assertTrue("icon.ok", ok)
+        guard let img = NSImage(contentsOfFile: outPath),
+              let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { failures.append("icon.reload.fail"); return }
+        assertEq("icon.size", rep.pixelsWide, 1024)
+        // 四角圓潤：角落透明 alpha≈0
+        assertTrue("icon.corner.transparent", (rep.colorAt(x: 8, y: 8)?.alphaComponent ?? 1) < 0.02)
+        // 內部不透明（白底/內容）
+        assertTrue("icon.center.opaque", (rep.colorAt(x: 512, y: 512)?.alphaComponent ?? 0) > 0.98)
     }
 
     static func testPaletteContainsExpectedColors() {

@@ -39,6 +39,10 @@ if args.count >= 3, args[1] == "--crop-demo" {
     let ok = UISnapshot.renderCropDemo(outputPath: args[2])
     exit(ok ? 0 : 1)
 }
+if args.count >= 4, args[1] == "--make-icon" {
+    let ok = IconMaker.makeRoundedIcon(input: args[2], output: args[3])
+    exit(ok ? 0 : 1)
+}
 if args.count >= 4, args[1] == "--transparency-demo" {
     let ok = UISnapshot.renderTransparencyDemo(viewPath: args[2], pngPath: args[3])
     exit(ok ? 0 : 1)
