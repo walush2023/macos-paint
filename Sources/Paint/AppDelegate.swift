@@ -4,9 +4,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var windowController: MainWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyAppIcon()
         setupMainMenu()
         windowController = MainWindowController()
         windowController.showWindow(nil)
+    }
+
+    /// 設定 Dock 圖標：優先用 bundle 內 AppIcon.icns，否則找執行檔旁的 icon.png。
+    private func applyAppIcon() {
+        if let icns = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let img = NSImage(contentsOf: icns) {
+            NSApplication.shared.applicationIconImage = img
+            return
+        }
+        let exeDir = URL(fileURLWithPath: CommandLine.arguments[0])
+            .deletingLastPathComponent()
+        for candidate in ["icon.png", "../../../icon.png", "../../../../icon.png"] {
+            let url = exeDir.appendingPathComponent(candidate).standardizedFileURL
+            if let img = NSImage(contentsOf: url) {
+                NSApplication.shared.applicationIconImage = img
+                return
+            }
+        }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
