@@ -43,6 +43,7 @@ enum UnitTests {
             ("toolSwitchCommits",  testToolSwitchCommitsSelection),
             ("newClearsFloating",  testNewClearsFloating),
             ("undoRemovesFloat",   testUndoRemovesFloatingInsert),
+            ("cropKeepsAlpha",     testCropPreservesTransparency),
         ]
         for (_, fn) in tests { fn() }
 
@@ -756,6 +757,27 @@ enum UnitTests {
         assertEq("undoFloat.base.green", p.1, 255)
         assertEq("undoFloat.base.notBlue", p.2, 0)
         assertEq("undoFloat.base.size", cv.bitmap.pixelsWide, 100)
+    }
+
+    static func testCropPreservesTransparency() {
+        let cv = makeCanvas(100, 80)
+        cv.testFloodFill(at: NSPoint(x: 5, y: 5), with: .paintTransparent)   // 整面透明
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+            NSRect(x: 40, y: 30, width: 20, height: 20).fill()              // 中央不透明紅塊
+        }
+        cv.pushHistory()
+        // 選取涵蓋透明+紅的 40×40 區域並裁剪
+        cv.testSetRectangularSelection(NSRect(x: 30, y: 20, width: 40, height: 40))
+        cv.cropToSelection()
+        assertEq("crop.size.w", cv.bitmap.pixelsWide, 40)
+        assertEq("crop.size.h", cv.bitmap.pixelsHigh, 40)
+        // 紅塊中心 (裁剪後 20,20) 仍不透明紅
+        let center = pixel(of: cv, 20, 20)!
+        assertEq("crop.center.red", center.0, 255)
+        assertEq("crop.center.opaque", center.3, 255)
+        // 角落 (裁剪後 2,2 → 原透明區) 應保持透明 alpha=0，而非變白
+        assertEq("crop.corner.transparent", pixel(of: cv, 2, 2)!.3, 0)
     }
 
     static func testPaletteContainsExpectedColors() {

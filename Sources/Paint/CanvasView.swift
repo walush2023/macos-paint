@@ -1207,10 +1207,13 @@ final class CanvasView: NSView {
         }()
         selectionImage = nil
         selectionRect = nil
-        guard let rep = makeBlankRep(size: r.size, fill: .white) else { return }
+        // 以「透明」為底並用 .copy 原樣搬入 → 保留裁剪區的透明背景（不再變白）
+        guard let rep = makeBlankRep(size: r.size, fill: .clear) else { return }
         installBitmap(rep, resetHistory: false)
-        drawInBitmap { _ in
-            img.draw(in: NSRect(origin: .zero, size: r.size))
+        drawInBitmap { ctx in
+            ctx.compositingOperation = .copy
+            img.draw(in: NSRect(origin: .zero, size: r.size),
+                     from: .zero, operation: .copy, fraction: 1.0)
         }
         pushHistory()
     }

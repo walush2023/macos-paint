@@ -43,6 +43,32 @@ enum UISnapshot {
         }
     }
 
+    /// 裁剪保留透明示範：透明底 + 紅圓 → 選取裁剪 → 渲染畫布（透明區應露出棋盤，而非白）。
+    static func renderCropDemo(outputPath: String) -> Bool {
+        _ = NSApplication.shared
+        let cv = CanvasView(size: NSSize(width: 260, height: 200))
+        cv.setFrameSize(NSSize(width: 260, height: 200))
+        cv.testFloodFill(at: NSPoint(x: 5, y: 5), with: .paintTransparent)   // 整面透明
+        cv.drawInBitmap { _ in
+            NSColor(srgbRed: 0.9, green: 0.25, blue: 0.2, alpha: 1).setFill()
+            NSBezierPath(ovalIn: NSRect(x: 70, y: 50, width: 110, height: 100)).fill()
+        }
+        cv.pushHistory()
+        cv.testSetRectangularSelection(NSRect(x: 50, y: 35, width: 160, height: 130))
+        cv.cropToSelection()
+        let a = cv.bitmap.colorAt(x: 3, y: 3)?.alphaComponent ?? 1   // 角落應透明
+        print("裁剪後尺寸: \(cv.bitmap.pixelsWide)×\(cv.bitmap.pixelsHigh)，角落 alpha=\(a)")
+        if let rep = cv.bitmapImageRepForCachingDisplay(in: cv.bounds) {
+            cv.cacheDisplay(in: cv.bounds, to: rep)
+            if let d = rep.representation(using: .png, properties: [:]) {
+                try? d.write(to: URL(fileURLWithPath: outputPath))
+            }
+        }
+        let ok = a < 0.02
+        print(ok ? "✓ 裁剪保留透明" : "✗ 裁剪變不透明")
+        return ok
+    }
+
     /// 疊圖示範：先「開啟」一張底圖，再拖入第二張 → 第二張以浮動選取疊在上方，渲染整個視窗。
     static func renderOverlayDemo(outputPath: String) -> Bool {
         _ = NSApplication.shared
