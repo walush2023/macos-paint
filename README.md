@@ -96,7 +96,7 @@ Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right tri
 ### Quick start (bundled `.app`)
 
 ```bash
-git clone https://github.com/<your-account>/macos-paint.git
+git clone https://github.com/walush2023/macos-paint.git
 cd macos-paint
 ./build_app.sh      # compiles, generates the icon, and packages Paint.app
 open Paint.app
