@@ -60,6 +60,7 @@ enum Cursors {
             arrow(at: a, dirX: -dx, dirY: -dy)
             NSColor.white.setStroke(); shaft.lineWidth = 3.4; shaft.lineCapStyle = .round; shaft.stroke()
             NSColor.black.setStroke(); shaft.lineWidth = 1.5; shaft.stroke()
+            centerDot(at: c)   // 抓取點：中心一點
         }
         return NSCursor(image: img, hotSpot: hot)
     }
@@ -79,8 +80,18 @@ enum Cursors {
             }
             NSColor.white.setStroke(); p.lineWidth = 3.4; p.lineCapStyle = .round; p.stroke()
             NSColor.black.setStroke(); p.lineWidth = 1.5; p.stroke()
+            centerDot(at: c)   // 移動基準：中心一點
         }
         return NSCursor(image: img, hotSpot: NSPoint(x: 12, y: 12))
+    }
+
+    /// 中心那「一點」：白圈包黑點，標示精準作用點（hotspot）。
+    private static func centerDot(at c: NSPoint, haloR: CGFloat = 2.6, dotR: CGFloat = 1.5) {
+        let halo = NSBezierPath(ovalIn: NSRect(x: c.x - haloR, y: c.y - haloR, width: haloR*2, height: haloR*2))
+        NSColor.white.setFill(); halo.fill()
+        NSColor.black.withAlphaComponent(0.5).setStroke(); halo.lineWidth = 0.6; halo.stroke()
+        let dot = NSBezierPath(ovalIn: NSRect(x: c.x - dotR, y: c.y - dotR, width: dotR*2, height: dotR*2))
+        NSColor.black.setFill(); dot.fill()
     }
 
     /// 依把手位置回傳對應的縮放游標。
@@ -146,23 +157,19 @@ enum Cursors {
     // MARK: - 十字準心 (選取 / 形狀)
 
     private static func makeCrosshair() -> NSCursor {
-        // 清楚的十字準心：四臂明顯，中央以白圈包黑點精準標示「起點」。
-        let size: CGFloat = 28
-        let c: CGFloat = 14, arm: CGFloat = 12, gap: CGFloat = 3
+        // 以「十字中間一點」為主：細十字導引到中央那一點，起點正落在該點。
+        let size: CGFloat = 24
+        let c: CGFloat = 12, arm: CGFloat = 10, gap: CGFloat = 4
         let img = image(size, scale: 2) {
             let p = NSBezierPath()
             p.move(to: NSPoint(x: c, y: c + gap)); p.line(to: NSPoint(x: c, y: c + arm))
             p.move(to: NSPoint(x: c, y: c - gap)); p.line(to: NSPoint(x: c, y: c - arm))
             p.move(to: NSPoint(x: c + gap, y: c)); p.line(to: NSPoint(x: c + arm, y: c))
             p.move(to: NSPoint(x: c - gap, y: c)); p.line(to: NSPoint(x: c - arm, y: c))
-            NSColor.white.setStroke(); p.lineWidth = 4; p.lineCapStyle = .round; p.stroke()
-            NSColor.black.setStroke(); p.lineWidth = 1.8; p.stroke()
-            // 精準起點：白圈 + 實心黑點，正落在 hotSpot
-            let ring = NSBezierPath(ovalIn: NSRect(x: c - 2.4, y: c - 2.4, width: 4.8, height: 4.8))
-            NSColor.white.setFill(); ring.fill()
-            NSColor.black.setStroke(); ring.lineWidth = 0.8; ring.stroke()
-            let dot = NSBezierPath(ovalIn: NSRect(x: c - 1.1, y: c - 1.1, width: 2.2, height: 2.2))
-            NSColor.black.setFill(); dot.fill()
+            NSColor.white.setStroke(); p.lineWidth = 3; p.lineCapStyle = .round; p.stroke()
+            NSColor.black.setStroke(); p.lineWidth = 1; p.stroke()
+            // 中央那一點（主角）：精準起點，正落在 hotSpot
+            centerDot(at: NSPoint(x: c, y: c), haloR: 3, dotR: 1.9)
         }
         return NSCursor(image: img, hotSpot: NSPoint(x: c, y: size - c))
     }

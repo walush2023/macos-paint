@@ -185,10 +185,15 @@ enum UISnapshot {
     /// 放大渲染所有工具游標到 PNG，方便視覺檢驗。
     static func renderCursors(outputPath: String) -> Bool {
         _ = NSApplication.shared
-        let tools: [(Tool, String)] = [
-            (.pencil, tr("鉛筆")), (.brush, tr("筆刷")), (.fill, "油漆桶"),
-            (.eraser, tr("橡皮擦")), (.picker, "滴管"), (.magnifier, tr("放大鏡")),
-            (.selectRect, "選取"), (.shape, "形狀"),
+        let tools: [(NSCursor, String)] = [
+            (Cursors.cursor(for: .pencil), tr("鉛筆")), (Cursors.cursor(for: .brush), tr("筆刷")),
+            (Cursors.cursor(for: .fill), "油漆桶"), (Cursors.cursor(for: .eraser), tr("橡皮擦")),
+            (Cursors.cursor(for: .picker), "滴管"), (Cursors.cursor(for: .magnifier), tr("放大鏡")),
+            (Cursors.cursor(for: .selectRect), "選取"), (Cursors.cursor(for: .shape), "形狀"),
+            // 調整插入圖片：移動 + 四向縮放
+            (Cursors.moveAll, "移動"), (Cursors.resizeNWSE, "縮放↖↘"),
+            (Cursors.resizeNESW, "縮放↗↙"), (Cursors.resizeNS, "縮放↕"),
+            (Cursors.resizeEW, "縮放↔"),
         ]
         let cell = 200, cols = 4
         let rows = (tools.count + cols - 1) / cols
@@ -206,7 +211,7 @@ enum UISnapshot {
             // 一半深色背景測試對比
             NSColor(white: 0.25, alpha: 1).setFill()
             NSRect(x: cx, y: cy, width: cell, height: cell/2).fill()
-            let cur = Cursors.cursor(for: item.0)
+            let cur = item.0
             let img = cur.image
             let drawn: CGFloat = 128
             let ix = CGFloat(cx) + (CGFloat(cell) - drawn)/2
