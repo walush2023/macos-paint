@@ -37,8 +37,8 @@ final class CanvasView: NSView {
     private var activeTextField: NSTextView?
     private var activeTextFont: NSFont = NSFont.systemFont(ofSize: 16)
 
-    /// 拖放圖片進來時的回呼（由 MainWindowController 設定，以更新標題/dirty 狀態）。
-    var onDropImage: ((NSImage, URL?) -> Void)?
+    /// 拖放圖片進來時的回呼（由 MainWindowController 設定）。參數：圖片、來源 URL、放下點(畫布座標)。
+    var onDropImage: ((NSImage, URL?, NSPoint) -> Void)?
     private var isDragHighlight = false
 
     override var isFlipped: Bool { false }
@@ -91,18 +91,20 @@ final class CanvasView: NSView {
         isDragHighlight = false
         needsDisplay = true
         let pb = sender.draggingPasteboard
+        // 放下位置（畫布座標，左下原點）
+        let dropPoint = clampToCanvas(convert(sender.draggingLocation, from: nil))
 
         // 1) 檔案 URL
         if let urls = pb.readObjects(forClasses: [NSURL.self],
                                      options: [.urlReadingContentsConformToTypes: ["public.image"]]) as? [URL],
            let url = urls.first, let img = NSImage(contentsOf: url) {
-            onDropImage?(img, url)
+            onDropImage?(img, url, dropPoint)
             return true
         }
         // 2) 直接的影像資料
         if let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
            let img = images.first {
-            onDropImage?(img, nil)
+            onDropImage?(img, nil, dropPoint)
             return true
         }
         return false
@@ -1060,6 +1062,37 @@ final class CanvasView: NSView {
         let size = img.size
         selectionImage = img
         selectionRect = NSRect(origin: NSPoint(x: 0, y: bounds.height - size.height), size: size)
+        needsDisplay = true
+    }
+
+    /// 把圖片以「可移動的浮動選取」疊在現有內容上方（拖入第二張圖時用）。
+    /// 放置在 `point` 為中心（畫布座標）；未指定則置中。可拖移、可用把手縮放，
+    /// 點選取外即合入底圖。
+    func overlayImage(_ img: NSImage, at point: NSPoint? = nil) {
+        commitSelection()
+        PaintState.shared.selectionShape = .rectangle
+        PaintState.shared.tool = .selectRect
+        NotificationCenter.default.post(name: PaintState.toolChanged, object: nil)
+        let size = img.size
+        var origin: NSPoint
+        if let p = point {
+            origin = NSPoint(x: p.x - size.width / 2, y: p.y - size.height / 2)
+        } else {
+            origin = NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2)
+        }
+        // 圖片放得進畫布時夾在範圍內；放不進就讓左上角對齊可見處。
+        if size.width <= bounds.width {
+            origin.x = max(0, min(bounds.width - size.width, origin.x))
+        } else {
+            origin.x = min(0, max(bounds.width - size.width, origin.x))
+        }
+        if size.height <= bounds.height {
+            origin.y = max(0, min(bounds.height - size.height, origin.y))
+        } else {
+            origin.y = min(0, max(bounds.height - size.height, origin.y))
+        }
+        selectionImage = img
+        selectionRect = NSRect(origin: origin, size: size)
         needsDisplay = true
     }
 

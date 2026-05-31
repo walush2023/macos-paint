@@ -32,6 +32,7 @@ enum UnitTests {
             ("transparentEraser",  testTransparentEraser),
             ("pngPreservesAlpha",  testPNGPreservesAlpha),
             ("loadPreservesAlpha", testLoadPreservesAlpha),
+            ("overlayDroppedImage", testOverlayDroppedImage),
         ]
         for (_, fn) in tests { fn() }
 
@@ -514,6 +515,42 @@ enum UnitTests {
         let red = pixel(of: dst, 18, 15)!
         assertEq("load.opaque.kept.alpha", red.3, 255)
         assertEq("load.opaque.kept.red", red.0, 255)
+    }
+
+    static func testOverlayDroppedImage() {
+        // 原始畫布：整面綠
+        let cv = makeCanvas(100, 80)
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 0, green: 1, blue: 0, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 100, height: 80).fill()
+        }
+        cv.pushHistory()
+
+        // 第二張圖：30x30 藍
+        let blue = NSImage(size: NSSize(width: 30, height: 30))
+        blue.lockFocus()
+        NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: 30, height: 30).fill()
+        blue.unlockFocus()
+
+        // 疊在中央 (50,40)
+        cv.overlayImage(blue, at: NSPoint(x: 50, y: 40))
+        // 應成為浮動選取，底圖尺寸不變（非取代整張畫布）
+        assertTrue("overlay.selection.set", cv.selectionImage != nil)
+        assertEq("overlay.canvas.unchanged.w", cv.bitmap.pixelsWide, 100)
+        assertEq("overlay.canvas.unchanged.h", cv.bitmap.pixelsHigh, 80)
+        guard let r = cv.selectionRect else { failures.append("overlay.rect.missing"); return }
+        assertEq("overlay.rect.size.w", Int(r.width), 30)
+        assertEq("overlay.centered.x", Int(r.midX), 50)
+        assertEq("overlay.centered.y", Int(r.midY), 40)
+
+        // 合入底圖後：中央變藍、四角仍綠（原圖被覆蓋而非取代）
+        cv.commitSelection()
+        let center = pixel(of: cv, 50, 40)!
+        assertEq("overlay.committed.center.blue", center.2, 255)
+        assertEq("overlay.committed.center.notGreen", center.1, 0)
+        let corner = pixel(of: cv, 3, 3)!
+        assertEq("overlay.corner.stillGreen", corner.1, 255)
     }
 
     static func testPaletteContainsExpectedColors() {

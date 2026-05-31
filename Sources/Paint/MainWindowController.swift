@@ -79,13 +79,21 @@ final class MainWindowController: NSWindowController {
         docView.wantsLayer = true
         scrollView.documentView = docView
         canvas.frame = NSRect(x: 20, y: docView.bounds.height - 620, width: 800, height: 600)
-        canvas.onDropImage = { [weak self] img, url in
+        canvas.onDropImage = { [weak self] img, url, dropPoint in
             guard let self = self else { return }
-            self.canvas.loadImage(img)
-            self.currentFileURL = url
-            self.isDirty = (url == nil)   // 從檔案拖入視為已開啟；貼上影像視為已修改
-            self.updateTitle()
-            self.layoutDocument()
+            if self.currentFileURL != nil || self.isDirty {
+                // 已開啟/編輯中：把新圖以可移動的浮動選取疊在原圖上方
+                self.canvas.overlayImage(img, at: dropPoint)
+                self.isDirty = true
+                self.updateTitle()
+            } else {
+                // 空白畫布：直接載入為整張畫布
+                self.canvas.loadImage(img)
+                self.currentFileURL = url
+                self.isDirty = (url == nil)
+                self.updateTitle()
+                self.layoutDocument()
+            }
         }
         docView.addSubview(canvas)
     }

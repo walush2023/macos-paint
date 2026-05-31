@@ -43,6 +43,47 @@ enum UISnapshot {
         }
     }
 
+    /// 疊圖示範：先「開啟」一張底圖，再拖入第二張 → 第二張以浮動選取疊在上方，渲染整個視窗。
+    static func renderOverlayDemo(outputPath: String) -> Bool {
+        _ = NSApplication.shared
+        let wc = MainWindowController()
+        guard let win = wc.window, let content = win.contentView else { return false }
+
+        // 底圖：橘色 + 對角線（模擬已開啟的圖片）
+        let base = NSImage(size: NSSize(width: 360, height: 260))
+        base.lockFocus()
+        NSColor(srgbRed: 0.95, green: 0.6, blue: 0.2, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: 360, height: 260).fill()
+        NSColor.white.setStroke()
+        let ln = NSBezierPath(); ln.lineWidth = 6
+        ln.move(to: .zero); ln.line(to: NSPoint(x: 360, y: 260)); ln.stroke()
+        base.unlockFocus()
+        wc.canvas.loadImage(base)
+        wc.currentFileURL = URL(fileURLWithPath: "/tmp/base.png")  // 視為「已開啟」
+
+        // 第二張圖：半透明藍圓
+        let overlay = NSImage(size: NSSize(width: 140, height: 140))
+        overlay.lockFocus()
+        NSColor(srgbRed: 0.15, green: 0.4, blue: 0.95, alpha: 0.85).setFill()
+        NSBezierPath(ovalIn: NSRect(x: 5, y: 5, width: 130, height: 130)).fill()
+        overlay.unlockFocus()
+
+        // 透過真實回呼路徑拖入（currentFileURL 非 nil → 疊加）
+        wc.canvas.onDropImage?(overlay, nil, NSPoint(x: 230, y: 110))
+
+        content.layoutSubtreeIfNeeded()
+        win.display()
+        let overlayActive = wc.canvas.selectionImage != nil
+        print("疊加為浮動選取: \(overlayActive)，底圖尺寸: \(wc.canvas.bitmap.pixelsWide)×\(wc.canvas.bitmap.pixelsHigh)")
+
+        guard let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds) else { return false }
+        content.cacheDisplay(in: content.bounds, to: rep)
+        guard let data = rep.representation(using: .png, properties: [:]) else { return false }
+        try? data.write(to: URL(fileURLWithPath: outputPath))
+        print(overlayActive ? "✓ 疊圖示範完成" : "✗ 疊圖未生效")
+        return overlayActive
+    }
+
     /// 透明示範：紅底挖透明洞 + 不透明藍圓，渲染畫布（洞露出棋盤）並另存實際 PNG。
     static func renderTransparencyDemo(viewPath: String, pngPath: String) -> Bool {
         _ = NSApplication.shared
@@ -148,8 +189,8 @@ enum UISnapshot {
             FileHandle.standardError.write("✗ 無法讀取圖片: \(imagePath)\n".data(using: .utf8)!)
             return false
         }
-        // 走與真實拖放完全相同的回呼路徑
-        wc.canvas.onDropImage?(img, URL(fileURLWithPath: imagePath))
+        // 走與真實拖放完全相同的回呼路徑（空白畫布 → 載入為整張畫布）
+        wc.canvas.onDropImage?(img, URL(fileURLWithPath: imagePath), .zero)
 
         content.layoutSubtreeIfNeeded()
         win.display()
