@@ -47,6 +47,55 @@ if args.count >= 3, args[1] == "--text-demo" {
     let ok = UISnapshot.renderTextDemo(outputPath: args[2])
     exit(ok ? 0 : 1)
 }
+if args[1] == "--cursor-debug" {
+    _ = NSApplication.shared
+    let cur = Cursors.cursor(for: .selectRect)
+    let img = cur.image
+    print("image.size = \(img.size)")
+    print("hotSpot = \(cur.hotSpot)")
+    for r in img.representations {
+        print("rep \(type(of: r)) pixels=\(r.pixelsWide)x\(r.pixelsHigh) size=\(r.size)")
+    }
+    // 以原生點大小渲染並數每個方向的黑色像素
+    let S = Int(img.size.width)
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: S, pixelsHigh: S,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    img.draw(in: NSRect(x: 0, y: 0, width: S, height: S))
+    NSGraphicsContext.restoreGraphicsState()
+    func dark(_ x: Int, _ y: Int) -> Bool {
+        guard let c = rep.colorAt(x: max(0,min(S-1,x)), y: max(0,min(S-1,y))) else { return false }
+        return c.alphaComponent > 0.3 && c.brightnessComponent < 0.5
+    }
+    let c = S/2
+    var up=0, down=0, left=0, right=0
+    for d in 3..<(S/2) {
+        if dark(c, c-d) { up += 1 }      // 視覺上 y 小 = 上(top-left origin of bitmap data)
+        if dark(c, c+d) { down += 1 }
+        if dark(c-d, c) { left += 1 }
+        if dark(c+d, c) { right += 1 }
+    }
+    print("arms(dark px) up=\(up) down=\(down) left=\(left) right=\(right)  (S=\(S))")
+    // 匯出原生大小、8x 近鄰放大（看真實像素）
+    let mag = 8
+    let big = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: S*mag, pixelsHigh: S*mag,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    let bctx = NSGraphicsContext(bitmapImageRep: big)!
+    NSGraphicsContext.current = bctx
+    NSColor(white: 0.6, alpha: 1).setFill(); NSRect(x:0,y:0,width:S*mag,height:S*mag).fill()
+    bctx.imageInterpolation = .none
+    img.draw(in: NSRect(x: 0, y: 0, width: S*mag, height: S*mag))
+    NSGraphicsContext.restoreGraphicsState()
+    if args.count >= 3, let d = big.representation(using: .png, properties: [:]) {
+        try? d.write(to: URL(fileURLWithPath: args[2]))
+        print("✓ 原生像素放大圖: \(args[2])")
+    }
+    exit(0)
+}
 if args.count >= 3, args[1] == "--text-panel" {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)

@@ -47,6 +47,7 @@ enum UnitTests {
             ("roundedIcon",        testRoundedIcon),
             ("textRender",         testTextRendersToBitmap),
             ("textFont",           testCurrentTextFont),
+            ("crosshairArms",      testCrosshairAllArms),
         ]
         for (_, fn) in tests { fn() }
 
@@ -838,6 +839,38 @@ enum UnitTests {
         assertTrue("font.bold", NSFontManager.shared.traits(of: f).contains(.boldFontMask))
         s.textFontName = savedName; s.textFontSize = savedSize
         s.textBold = savedB; s.textItalic = savedI
+    }
+
+    static func testCrosshairAllArms() {
+        // 把選取十字游標以「原生大小」渲染，驗證四臂與中心皆有可見像素
+        // （先前手動 2x 點陣 helper 會在原生大小錯位/裁切，造成只剩兩條線）。
+        let img = Cursors.debugCrosshairImage()
+        let S = max(1, Int(img.size.width.rounded()))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: S, pixelsHigh: S,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else {
+            failures.append("cross.rep.fail"); return
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        img.draw(in: NSRect(x: 0, y: 0, width: S, height: S))
+        NSGraphicsContext.restoreGraphicsState()
+
+        func visibleNear(_ cx: Int, _ cy: Int, _ r: Int = 2) -> Bool {
+            for dy in -r...r { for dx in -r...r {
+                let x = cx + dx, y = cy + dy
+                if x >= 0, x < S, y >= 0, y < S,
+                   (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.3 { return true }
+            }}
+            return false
+        }
+        let c = S / 2
+        assertTrue("cross.center", visibleNear(c, c))
+        assertTrue("cross.armTop",    visibleNear(c, 3))
+        assertTrue("cross.armBottom", visibleNear(c, S - 3))
+        assertTrue("cross.armLeft",   visibleNear(3, c))
+        assertTrue("cross.armRight",  visibleNear(S - 3, c))
     }
 
     static func testPaletteContainsExpectedColors() {

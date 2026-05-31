@@ -106,32 +106,19 @@ enum Cursors {
 
     // MARK: - 繪圖基礎
 
-    /// 以 2x 點陣繪製 size×size 點的游標圖，回傳 retina-ready NSImage。
+    /// 以 lockFocus 建立游標圖（依螢幕 backing scale 自動 retina，座標正確）。
     private static func image(_ size: CGFloat = 24, scale: CGFloat = 2, _ draw: () -> Void) -> NSImage {
-        let px = Int(size * scale)
-        guard let rep = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px,
-            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
-        ) else { return NSImage(size: NSSize(width: size, height: size)) }
-        rep.size = NSSize(width: size, height: size)
-
-        NSGraphicsContext.saveGraphicsState()
-        if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
-            NSGraphicsContext.current = ctx
-            ctx.cgContext.scaleBy(x: scale, y: scale)   // 在「點」座標系繪製
-            ctx.shouldAntialias = true
-            ctx.cgContext.setLineJoin(.round)
-            ctx.cgContext.setLineCap(.round)
-            draw()
-            ctx.flushGraphics()
-        }
-        NSGraphicsContext.restoreGraphicsState()
-
         let img = NSImage(size: NSSize(width: size, height: size))
-        img.addRepresentation(rep)
+        img.lockFocus()
+        NSGraphicsContext.current?.cgContext.setLineJoin(.round)
+        NSGraphicsContext.current?.cgContext.setLineCap(.round)
+        draw()
+        img.unlockFocus()
         return img
     }
+
+    /// 測試用：直接取得選取十字的原始 NSImage（不經 NSCursor 光柵化）。
+    static func debugCrosshairImage() -> NSImage { makeCrosshair().image }
 
     /// 先描白色光暈再填色、最後細黑邊：任何背景都看得清。
     private static func paint(_ path: NSBezierPath, fill: NSColor, halo: CGFloat = 2.4, line: CGFloat = 0.9,
