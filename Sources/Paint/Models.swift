@@ -51,6 +51,7 @@ final class PaintState {
     var strokeSize: CGFloat = 3
     var outlineStyle: FillStyle = .solid   // shape outline
     var fillStyle: FillStyle = .none       // shape fill
+    var fillTolerance: Double = 0          // 油漆桶容許度 0–100%（0=完全相同色才填）
     var selectionShape: SelectionShape = .rectangle
     var transparentSelection: Bool = false
     var canvasSize: NSSize = NSSize(width: 800, height: 600)
@@ -71,6 +72,7 @@ final class PaintState {
     static let canvasResized = Notification.Name("paint.canvasResized")
     static let viewChanged   = Notification.Name("paint.viewChanged")
     static let statusUpdate  = Notification.Name("paint.statusUpdate")
+    static let toleranceChanged = Notification.Name("paint.toleranceChanged")
 }
 
 // MARK: - Standard Palette (Windows Paint colors)

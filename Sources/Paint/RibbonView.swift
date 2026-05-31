@@ -14,6 +14,7 @@ final class RibbonView: NSView {
     private var outlineMenu: NSPopUpButton!
     private var fillMenu: NSPopUpButton!
     private var selectionShapeMenu: NSPopUpButton!
+    private var toleranceLabel: NSTextField!
 
     override var isFlipped: Bool { true }
 
@@ -27,6 +28,14 @@ final class RibbonView: NSView {
     private var bandBottom: CGFloat { topPad + bandH }   // 內容區下緣 (=78)
     /// 在內容帶中，把高度 h 的元件垂直置中時的頂端 y。
     private func centeredY(_ h: CGFloat) -> CGFloat { topPad + (bandH - h) / 2 }
+
+    // MARK: - 統一字級
+    /// 所有文字標籤（按鈕標題、小按鈕、群組標籤、下拉、勾選框、色彩標籤）都用這個。
+    static let textFont = NSFont.systemFont(ofSize: 11)
+    /// 大按鈕的 emoji 圖示。
+    static let bigIconFont = NSFont.systemFont(ofSize: 22)
+    /// 工具/形狀格點的符號字級。
+    static let glyphFont = NSFont.systemFont(ofSize: 15)
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 110))
@@ -72,6 +81,7 @@ final class RibbonView: NSView {
         x = buildClipboardGroup(x: x); x = drawSeparator(x: x)
         x = buildImageGroup(x: x); x = drawSeparator(x: x)
         x = buildToolsGroup(x: x); x = drawSeparator(x: x)
+        x = buildToleranceGroup(x: x); x = drawSeparator(x: x)
         x = buildBrushesGroup(x: x); x = drawSeparator(x: x)
         x = buildShapesGroup(x: x); x = drawSeparator(x: x)
         x = buildSizeGroup(x: x); x = drawSeparator(x: x)
@@ -112,14 +122,17 @@ final class RibbonView: NSView {
         let topY = centeredY(rowH * 3)
         let rulers = NSButton(checkboxWithTitle: "尺規", target: self, action: #selector(toggleRulersBox(_:)))
         rulers.state = PaintState.shared.showRulers ? .on : .off
+        rulers.font = RibbonView.textFont
         rulers.frame = NSRect(x: x, y: topY, width: 110, height: 22)
         addSubview(rulers)
         let grid = NSButton(checkboxWithTitle: "格線", target: self, action: #selector(toggleGridBox(_:)))
         grid.state = PaintState.shared.showGridlines ? .on : .off
+        grid.font = RibbonView.textFont
         grid.frame = NSRect(x: x, y: topY + rowH, width: 110, height: 22)
         addSubview(grid)
         let status = NSButton(checkboxWithTitle: "狀態列", target: self, action: #selector(toggleStatusBox(_:)))
         status.state = PaintState.shared.showStatusBar ? .on : .off
+        status.font = RibbonView.textFont
         status.frame = NSRect(x: x, y: topY + rowH * 2, width: 110, height: 22)
         addSubview(status)
         addGroupLabel("顯示或隱藏", x: x, w: 110)
@@ -241,6 +254,38 @@ final class RibbonView: NSView {
         return gridX + gridW + 4
     }
 
+    /// 油漆桶容許度（垂直滑桿 + 百分比），調高可一起填掉相近的顏色。
+    private func buildToleranceGroup(x: CGFloat) -> CGFloat {
+        let groupW: CGFloat = 58
+        let sliderH: CGFloat = 46
+        let slider = NSSlider(value: PaintState.shared.fillTolerance, minValue: 0, maxValue: 100,
+                              target: self, action: #selector(toleranceChanged(_:)))
+        slider.isVertical = true
+        slider.controlSize = .small
+        slider.isContinuous = true
+        slider.frame = NSRect(x: x + (groupW - 16) / 2, y: topPad + 2, width: 16, height: sliderH)
+        slider.toolTip = "油漆桶容許度：越高，越多相近顏色會被一起填滿"
+        addSubview(slider)
+
+        toleranceLabel = NSTextField(labelWithString: "\(Int(PaintState.shared.fillTolerance))%")
+        toleranceLabel.font = RibbonView.textFont
+        toleranceLabel.alignment = .center
+        toleranceLabel.textColor = .black
+        toleranceLabel.drawsBackground = false
+        toleranceLabel.isBordered = false
+        toleranceLabel.frame = NSRect(x: x, y: topPad + sliderH + 3, width: groupW, height: 16)
+        addSubview(toleranceLabel)
+
+        addGroupLabel("容許度", x: x, w: groupW)
+        return x + groupW + 4
+    }
+
+    @objc private func toleranceChanged(_ sender: NSSlider) {
+        PaintState.shared.fillTolerance = sender.doubleValue
+        toleranceLabel?.stringValue = "\(Int(sender.doubleValue.rounded()))%"
+        NotificationCenter.default.post(name: PaintState.toleranceChanged, object: nil)
+    }
+
     private func buildBrushesGroup(x: CGFloat) -> CGFloat {
         let big = makeBigButton(title: "筆刷 ▾", icon: "🖌", x: x) { [weak self] sender in
             self?.showBrushMenu(from: sender)
@@ -283,7 +328,7 @@ final class RibbonView: NSView {
             btn.bezelStyle = .smallSquare
             btn.isBordered = false
             btn.title = info.2
-            btn.font = NSFont.systemFont(ofSize: 12)
+            btn.font = RibbonView.glyphFont
             btn.toolTip = info.1
             btn.target = self
             btn.action = #selector(shapeClicked(_:))
@@ -298,6 +343,8 @@ final class RibbonView: NSView {
         outlineMenu = NSPopUpButton(frame: NSRect(x: x, y: dropY, width: dropW, height: dropH))
         outlineMenu.addItem(withTitle: "外框: 純色")
         outlineMenu.addItem(withTitle: "外框: 無外框")
+        outlineMenu.font = RibbonView.textFont
+        outlineMenu.controlSize = .small
         outlineMenu.target = self
         outlineMenu.action = #selector(outlineChanged(_:))
         addSubview(outlineMenu)
@@ -305,6 +352,8 @@ final class RibbonView: NSView {
         fillMenu = NSPopUpButton(frame: NSRect(x: x + dropW + 4, y: dropY, width: dropW, height: dropH))
         fillMenu.addItem(withTitle: "填滿: 無填滿")
         fillMenu.addItem(withTitle: "填滿: 純色")
+        fillMenu.font = RibbonView.textFont
+        fillMenu.controlSize = .small
         fillMenu.target = self
         fillMenu.action = #selector(fillChanged(_:))
         addSubview(fillMenu)
@@ -388,14 +437,14 @@ final class RibbonView: NSView {
         stack.alignment = .centerX
         stack.spacing = 1
         let iconLbl = NSTextField(labelWithString: icon)
-        iconLbl.font = NSFont.systemFont(ofSize: 26)
+        iconLbl.font = RibbonView.bigIconFont
         iconLbl.alignment = .center
         iconLbl.isBordered = false
         iconLbl.drawsBackground = false
         iconLbl.isEditable = false
         iconLbl.textColor = NSColor.black
         let titleLbl = NSTextField(labelWithString: title)
-        titleLbl.font = NSFont.systemFont(ofSize: 11)
+        titleLbl.font = RibbonView.textFont
         titleLbl.alignment = .center
         titleLbl.isBordered = false
         titleLbl.drawsBackground = false
@@ -425,7 +474,7 @@ final class RibbonView: NSView {
         btn.attributedTitle = NSAttributedString(
             string: "\(icon)  \(title)",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
+                .font: RibbonView.textFont,
                 .foregroundColor: NSColor.black,
                 .paragraphStyle: style,
             ]
@@ -441,7 +490,7 @@ final class RibbonView: NSView {
         btn.bezelStyle = .smallSquare
         btn.isBordered = false
         btn.title = icon
-        btn.font = NSFont.systemFont(ofSize: 14)
+        btn.font = RibbonView.glyphFont
         btn.toolTip = tooltip
         btn.target = self
         btn.action = #selector(toolClicked(_:))
@@ -451,7 +500,7 @@ final class RibbonView: NSView {
 
     private func addGroupLabel(_ s: String, x: CGFloat, w: CGFloat) {
         let lbl = NSTextField(labelWithString: s)
-        lbl.font = NSFont.systemFont(ofSize: 10)
+        lbl.font = RibbonView.textFont
         lbl.alignment = .center
         lbl.textColor = NSColor(calibratedWhite: 0.25, alpha: 1)
         lbl.drawsBackground = false
@@ -669,10 +718,11 @@ final class ColorSwatchView: NSView {
         NSColor.black.setStroke()
         NSBezierPath(rect: swatch).stroke()
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10),
+            .font: RibbonView.textFont,
             .foregroundColor: NSColor.black
         ]
-        (label as NSString).draw(at: NSPoint(x: 4, y: 2), withAttributes: attrs)
+        let labelSize = (label as NSString).size(withAttributes: attrs)
+        (label as NSString).draw(at: NSPoint(x: (bounds.width - labelSize.width) / 2, y: 2), withAttributes: attrs)
     }
     override func mouseDown(with event: NSEvent) {
         onClick?()

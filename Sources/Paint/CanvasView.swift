@@ -665,41 +665,60 @@ final class CanvasView: NSView {
         let spp = bitmap.samplesPerPixel
 
         @inline(__always) func idx(_ x: Int, _ y: Int) -> Int { y * bpr + x * spp }
-        let t0 = data[idx(x, y)], t1 = data[idx(x, y) + 1], t2 = data[idx(x, y) + 2], t3 = data[idx(x, y) + 3]
+        let seed = idx(x, y)
+        let t0 = data[seed], t1 = data[seed + 1], t2 = data[seed + 2], t3 = data[seed + 3]
         var rgba: [CGFloat] = [0, 0, 0, 0]
         let conv = color.usingColorSpace(.deviceRGB) ?? color
         conv.getComponents(&rgba)
         let nr = UInt8(rgba[0] * 255), ng = UInt8(rgba[1] * 255), nb = UInt8(rgba[2] * 255), na = UInt8(rgba[3] * 255)
-        if (t0, t1, t2, t3) == (nr, ng, nb, na) { return }
 
-        @inline(__always) func matches(_ i: Int) -> Bool {
-            data[i] == t0 && data[i+1] == t1 && data[i+2] == t2 && data[i+3] == t3
+        // 容許度：0% → 僅完全相同色；100% → 任意色。以 RGB 歐氏距離為基準。
+        let tol = PaintState.shared.fillTolerance / 100.0
+        let maxDist = (255.0 * 255.0 * 3.0).squareRoot()
+        let threshold = tol * maxDist
+
+        if tol <= 0 && (t0, t1, t2, t3) == (nr, ng, nb, na) { return }
+
+        // 與種子色的距離是否在容許度內（只比 RGB）。
+        @inline(__always) func matchesSeed(_ i: Int) -> Bool {
+            if threshold == 0 {
+                return data[i] == t0 && data[i+1] == t1 && data[i+2] == t2
+            }
+            let dr = Double(Int(data[i])   - Int(t0))
+            let dg = Double(Int(data[i+1]) - Int(t1))
+            let db = Double(Int(data[i+2]) - Int(t2))
+            return (dr*dr + dg*dg + db*db).squareRoot() <= threshold
         }
+
+        // visited 陣列：容許度模式下，新填的色可能仍落在種子容許度內，
+        // 若不標記已訪將造成重複掃描甚至無窮迴圈。
+        var visited = [Bool](repeating: false, count: w * h)
+        @inline(__always) func vIdx(_ x: Int, _ y: Int) -> Int { y * w + x }
 
         var stack: [(Int, Int)] = [(x, y)]
         while let (cx, cy) = stack.popLast() {
-            // 同一像素可能從不同列被 push 兩次；pop 時已被先前的 scan 填過
-            // 此時起始像素不再 match，會讓 lx > rx 造成 Range crash，直接跳過。
-            guard matches(idx(cx, cy)) else { continue }
+            if visited[vIdx(cx, cy)] { continue }
+            if !matchesSeed(idx(cx, cy)) { continue }
 
             var lx = cx
-            while lx >= 0, matches(idx(lx, cy)) { lx -= 1 }
+            while lx >= 0, !visited[vIdx(lx, cy)], matchesSeed(idx(lx, cy)) { lx -= 1 }
             lx += 1
             var rx = cx
-            while rx < w, matches(idx(rx, cy)) { rx += 1 }
+            while rx < w, !visited[vIdx(rx, cy)], matchesSeed(idx(rx, cy)) { rx += 1 }
             rx -= 1
             if lx > rx { continue }
             for xi in lx...rx {
                 let i = idx(xi, cy)
                 data[i] = nr; data[i+1] = ng; data[i+2] = nb; data[i+3] = na
+                visited[vIdx(xi, cy)] = true
             }
             if cy > 0 {
-                for xi in lx...rx where matches(idx(xi, cy - 1)) {
+                for xi in lx...rx where !visited[vIdx(xi, cy - 1)] && matchesSeed(idx(xi, cy - 1)) {
                     stack.append((xi, cy - 1))
                 }
             }
             if cy < h - 1 {
-                for xi in lx...rx where matches(idx(xi, cy + 1)) {
+                for xi in lx...rx where !visited[vIdx(xi, cy + 1)] && matchesSeed(idx(xi, cy + 1)) {
                     stack.append((xi, cy + 1))
                 }
             }

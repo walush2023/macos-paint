@@ -26,6 +26,7 @@ enum UnitTests {
             ("flipV",              testFlipVertical),
             ("zoomStep25",         testZoomStep25),
             ("cursorMapping",      testCursorMapping),
+            ("fillTolerance",      testFillTolerance),
         ]
         for (_, fn) in tests { fn() }
 
@@ -399,6 +400,36 @@ enum UnitTests {
         assertTrue("cursor.eraser.notArrow", Cursors.cursor(for: .eraser) !== NSCursor.arrow)
         assertTrue("cursor.picker.notArrow", Cursors.cursor(for: .picker) !== NSCursor.arrow)
         assertTrue("cursor.magnifier.notArrow", Cursors.cursor(for: .magnifier) !== NSCursor.arrow)
+    }
+
+    static func testFillTolerance() {
+        let base = NSColor(deviceRed: 100/255.0, green: 100/255.0, blue: 100/255.0, alpha: 1)
+        let near = NSColor(deviceRed: 120/255.0, green: 120/255.0, blue: 120/255.0, alpha: 1)
+        let red  = NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1)
+        func paint(_ cv: CanvasView) {
+            cv.drawInBitmap { _ in
+                base.setFill(); NSRect(x: 0, y: 0, width: 80, height: 60).fill()
+                near.setFill(); NSRect(x: 30, y: 20, width: 20, height: 20).fill()
+            }
+        }
+
+        // 容許度 0：只填完全相同色，相近塊（120）不受影響
+        let cv = makeCanvas(80, 60)
+        paint(cv)
+        PaintState.shared.fillTolerance = 0
+        cv.testFloodFill(at: NSPoint(x: 5, y: 5), with: red)
+        assertEq("tol0.base.red", pixel(of: cv, 5, 5)!.0, 255)
+        assertEq("tol0.block.untouched", pixel(of: cv, 40, 30)!.0, 120)
+
+        // 容許度 30：相近色也一起被填掉
+        let cv2 = makeCanvas(80, 60)
+        paint(cv2)
+        PaintState.shared.fillTolerance = 30
+        cv2.testFloodFill(at: NSPoint(x: 5, y: 5), with: red)
+        assertEq("tol30.base.red", pixel(of: cv2, 5, 5)!.0, 255)
+        assertEq("tol30.block.filled", pixel(of: cv2, 40, 30)!.0, 255)
+
+        PaintState.shared.fillTolerance = 0  // 還原，避免污染其他測試
     }
 
     static func testPaletteContainsExpectedColors() {

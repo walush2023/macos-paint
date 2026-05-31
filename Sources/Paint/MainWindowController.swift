@@ -303,12 +303,15 @@ final class MainWindowController: NSWindowController {
 
     // MARK: - View
 
+    // 檢視頁的放大/縮小 與 右下角 +/- 使用相同的 25% 步進邏輯
     @objc func zoomIn(_ sender: Any?) {
-        PaintState.shared.zoom = min(8.0, PaintState.shared.zoom * 1.5)
+        let pct = StatusBarView.nextZoomPct(from: Double(PaintState.shared.zoom * 100), up: true)
+        PaintState.shared.zoom = CGFloat(pct / 100.0)
         NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
     }
     @objc func zoomOut(_ sender: Any?) {
-        PaintState.shared.zoom = max(0.1, PaintState.shared.zoom / 1.5)
+        let pct = StatusBarView.nextZoomPct(from: Double(PaintState.shared.zoom * 100), up: false)
+        PaintState.shared.zoom = CGFloat(pct / 100.0)
         NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
     }
     @objc func zoom100(_ sender: Any?) {
