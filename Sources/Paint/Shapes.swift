@@ -10,17 +10,22 @@ enum ShapeRenderer {
             width: abs(b.x - a.x), height: abs(b.y - a.y)
         )
         let path = pathFor(kind: kind, rect: rect, p0: a, p1: b)
+        let ctx = NSGraphicsContext.current
         if fillStyle == .solid {
+            // 透明填色 → 以 .clear 把該區域清成透明
+            ctx?.compositingOperation = fill.isPaintTransparent ? .clear : .sourceOver
             fill.setFill()
             path.fill()
         }
         if outline == .solid {
+            ctx?.compositingOperation = stroke.isPaintTransparent ? .clear : .sourceOver
             stroke.setStroke()
             path.lineWidth = size
             path.lineJoinStyle = .round
             path.lineCapStyle = .round
             path.stroke()
         }
+        ctx?.compositingOperation = .sourceOver
     }
 
     private static func pathFor(kind: ShapeKind, rect r: NSRect, p0: NSPoint, p1: NSPoint) -> NSBezierPath {

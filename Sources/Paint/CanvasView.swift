@@ -252,8 +252,13 @@ final class CanvasView: NSView {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        // 1) base bitmap
-        bitmap.draw(in: bounds)
+        // 0) 透明棋盤底（透明像素會露出此圖樣）
+        drawTransparencyCheckerboard(in: dirtyRect)
+
+        // 1) base bitmap（明確 sourceOver：透明處露出棋盤，而非以 copy 覆寫掉棋盤）
+        let src = NSRect(x: 0, y: 0, width: bitmap.pixelsWide, height: bitmap.pixelsHigh)
+        bitmap.draw(in: bounds, from: src, operation: .sourceOver, fraction: 1.0,
+                    respectFlipped: true, hints: nil)
 
         // 2) overlay (preview)
         overlay.draw(in: bounds)
@@ -314,6 +319,32 @@ final class CanvasView: NSView {
             border.lineWidth = 4
             border.setLineDash([10, 6], count: 2, phase: 0)
             border.stroke()
+        }
+    }
+
+    /// 畫透明棋盤底：白底 + 灰格，透明像素會露出此圖樣。
+    /// dirtyRect 在 cacheDisplay 時可能是無限矩形，需與 bounds 取交集後再畫。
+    private func drawTransparencyCheckerboard(in dirty: NSRect) {
+        let rect = bounds.intersection(dirty.isInfinite ? bounds : dirty)
+        guard !rect.isEmpty else { return }
+        NSColor.white.setFill()
+        rect.fill()
+        let cell: CGFloat = 8
+        NSColor(white: 0.78, alpha: 1).setFill()
+        let x0 = (rect.minX / cell).rounded(.down) * cell
+        let y0 = (rect.minY / cell).rounded(.down) * cell
+        var y = y0
+        while y < rect.maxY {
+            var x = x0
+            while x < rect.maxX {
+                let gx = Int((x / cell).rounded(.down))
+                let gy = Int((y / cell).rounded(.down))
+                if (gx + gy) % 2 == 0 {
+                    NSRect(x: x, y: y, width: cell, height: cell).intersection(rect).fill()
+                }
+                x += cell
+            }
+            y += cell
         }
     }
 
@@ -599,7 +630,11 @@ final class CanvasView: NSView {
         let color = currentColor()
         let bg = altColor()
         let size = PaintState.shared.strokeSize
-        drawInBitmap { _ in
+        // 透明色：以 .clear 合成把覆蓋處清成透明。
+        let activeColor = (tool == .eraser) ? bg : color
+        let transparent = activeColor.isPaintTransparent
+        drawInBitmap { ctx in
+            if transparent { ctx.compositingOperation = .clear }
             switch tool {
             case .pencil:
                 let path = NSBezierPath()
@@ -633,6 +668,11 @@ final class CanvasView: NSView {
     /// 給單元測試呼叫的版本（使用 *視覺座標*，原點左下）。
     func testFloodFill(at p: NSPoint, with color: NSColor) {
         floodFill(at: p, with: color)
+    }
+
+    /// 給單元測試：直接觸發筆畫繪製（鉛筆/筆刷/橡皮擦）。
+    func testStroke(from a: NSPoint, to b: NSPoint, tool: Tool) {
+        drawStroke(from: a, to: b, tool: tool)
     }
 
     /// 給單元測試用：模擬把手 hit-test。
@@ -672,22 +712,24 @@ final class CanvasView: NSView {
         conv.getComponents(&rgba)
         let nr = UInt8(rgba[0] * 255), ng = UInt8(rgba[1] * 255), nb = UInt8(rgba[2] * 255), na = UInt8(rgba[3] * 255)
 
-        // 容許度：0% → 僅完全相同色；100% → 任意色。以 RGB 歐氏距離為基準。
+        // 容許度：0% → 僅完全相同色；100% → 任意色。以 RGBA 歐氏距離為基準。
+        // 含 alpha：避免不透明黑(0,0,0,255) 與 透明(0,0,0,0) 因 RGB 相同而互相滲漏。
         let tol = PaintState.shared.fillTolerance / 100.0
-        let maxDist = (255.0 * 255.0 * 3.0).squareRoot()
+        let maxDist = (255.0 * 255.0 * 4.0).squareRoot()
         let threshold = tol * maxDist
 
         if tol <= 0 && (t0, t1, t2, t3) == (nr, ng, nb, na) { return }
 
-        // 與種子色的距離是否在容許度內（只比 RGB）。
+        // 與種子色的距離是否在容許度內（比 RGBA）。
         @inline(__always) func matchesSeed(_ i: Int) -> Bool {
             if threshold == 0 {
-                return data[i] == t0 && data[i+1] == t1 && data[i+2] == t2
+                return data[i] == t0 && data[i+1] == t1 && data[i+2] == t2 && data[i+3] == t3
             }
             let dr = Double(Int(data[i])   - Int(t0))
             let dg = Double(Int(data[i+1]) - Int(t1))
             let db = Double(Int(data[i+2]) - Int(t2))
-            return (dr*dr + dg*dg + db*db).squareRoot() <= threshold
+            let da = Double(Int(data[i+3]) - Int(t3))
+            return (dr*dr + dg*dg + db*db + da*da).squareRoot() <= threshold
         }
 
         // visited 陣列：容許度模式下，新填的色可能仍落在種子容許度內，

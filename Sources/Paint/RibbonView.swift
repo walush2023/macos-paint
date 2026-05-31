@@ -408,7 +408,19 @@ final class RibbonView: NSView {
             paletteCells.append(cell)
             addSubview(cell)
         }
-        x += CGFloat(cols) * (cellSize + cellGap) + 10
+        x += CGFloat(cols) * (cellSize + cellGap) + 6
+
+        // 透明色格（棋盤，跨兩列）：左鍵設色彩1、右鍵設色彩2
+        let transCell = PaletteCellView(color: .paintTransparent, isTransparent: true)
+        transCell.frame = NSRect(x: x, y: paletteY, width: cellSize, height: paletteH)
+        transCell.onClick = { [weak self] secondary in
+            if secondary { PaintState.shared.color2 = .paintTransparent }
+            else { PaintState.shared.color1 = .paintTransparent }
+            NotificationCenter.default.post(name: PaintState.colorChanged, object: nil)
+        }
+        paletteCells.append(transCell)
+        addSubview(transCell)
+        x += cellSize + 10
 
         // 編輯色彩大按鈕
         let editBtn = makeBigButton(title: "編輯色彩", icon: "🎨", x: x) { [weak self] _ in
@@ -713,8 +725,12 @@ final class ColorSwatchView: NSView {
             NSBezierPath(rect: bounds).fill()
         }
         let swatch = NSRect(x: bounds.midX - 14, y: bounds.maxY - 28, width: 28, height: 18)
-        color.setFill()
-        NSBezierPath(rect: swatch).fill()
+        if color.isPaintTransparent {
+            CheckerSwatch.draw(in: swatch)
+        } else {
+            color.setFill()
+            NSBezierPath(rect: swatch).fill()
+        }
         NSColor.black.setStroke()
         NSBezierPath(rect: swatch).stroke()
         let attrs: [NSAttributedString.Key: Any] = [
@@ -731,21 +747,41 @@ final class ColorSwatchView: NSView {
 
 final class PaletteCellView: NSView {
     var color: NSColor
+    var isTransparent: Bool = false
     var onClick: ((Bool) -> Void)?
-    init(color: NSColor) {
+    init(color: NSColor, isTransparent: Bool = false) {
         self.color = color
+        self.isTransparent = isTransparent
         super.init(frame: .zero)
         wantsLayer = true
+        if isTransparent { toolTip = "透明色：以此繪圖會清成透明（PNG 會保留透明）" }
     }
     required init?(coder: NSCoder) { fatalError() }
     override func draw(_ dirtyRect: NSRect) {
-        color.setFill()
-        NSBezierPath(rect: bounds).fill()
+        if isTransparent {
+            CheckerSwatch.draw(in: bounds)
+        } else {
+            color.setFill()
+            NSBezierPath(rect: bounds).fill()
+        }
         NSColor.darkGray.setStroke()
         NSBezierPath(rect: bounds).stroke()
     }
     override func mouseDown(with event: NSEvent)       { onClick?(false) }
     override func rightMouseDown(with event: NSEvent)  { onClick?(true) }
+}
+
+/// 小型透明棋盤繪製（色彩 swatch / 調色盤透明格共用）。
+enum CheckerSwatch {
+    static func draw(in r: NSRect) {
+        NSColor.white.setFill(); NSBezierPath(rect: r).fill()
+        NSColor(white: 0.72, alpha: 1).setFill()
+        let n = 4
+        let cw = r.width / CGFloat(n), ch = r.height / CGFloat(n)
+        for gy in 0..<n { for gx in 0..<n where (gx + gy) % 2 == 0 {
+            NSRect(x: r.minX + CGFloat(gx)*cw, y: r.minY + CGFloat(gy)*ch, width: cw, height: ch).fill()
+        }}
+    }
 }
 
 // MARK: - NSColor RGB compare

@@ -43,6 +43,50 @@ enum UISnapshot {
         }
     }
 
+    /// 透明示範：紅底挖透明洞 + 不透明藍圓，渲染畫布（洞露出棋盤）並另存實際 PNG。
+    static func renderTransparencyDemo(viewPath: String, pngPath: String) -> Bool {
+        _ = NSApplication.shared
+        let cv = CanvasView(size: NSSize(width: 360, height: 260))
+        cv.setFrameSize(NSSize(width: 360, height: 260))
+        cv.drawInBitmap { _ in
+            NSColor(srgbRed: 0.93, green: 0.30, blue: 0.24, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 360, height: 260).fill()
+        }
+        // 用透明挖一個圓洞
+        cv.drawInBitmap { ctx in
+            ctx.compositingOperation = .clear
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: NSRect(x: 90, y: 60, width: 180, height: 140)).fill()
+        }
+        // 不透明藍圓覆蓋在洞中（示範「覆蓋透明元素」）
+        cv.drawInBitmap { _ in
+            NSColor(srgbRed: 0.15, green: 0.45, blue: 0.9, alpha: 1).setFill()
+            NSBezierPath(ovalIn: NSRect(x: 150, y: 95, width: 70, height: 70)).fill()
+        }
+        // 渲染畫布視圖（洞露出棋盤）
+        if let rep = cv.bitmapImageRepForCachingDisplay(in: cv.bounds) {
+            cv.cacheDisplay(in: cv.bounds, to: rep)
+            if let d = rep.representation(using: .png, properties: [:]) {
+                try? d.write(to: URL(fileURLWithPath: viewPath))
+            }
+        }
+        // 實際匯出 PNG（保留透明）
+        var ok = false
+        if let d = cv.exportData(fileType: .png) {
+            try? d.write(to: URL(fileURLWithPath: pngPath))
+            // 驗證透明區 alpha 0：取挖洞圓內、藍圓外的點（視覺 (110,130) → top-left y=260-1-130）
+            if let rep = NSBitmapImageRep(data: d) {
+                let a = rep.colorAt(x: 110, y: 260 - 1 - 130)?.alphaComponent ?? 1
+                // 同時確認四角仍是不透明紅
+                let corner = rep.colorAt(x: 5, y: 5)?.alphaComponent ?? 0
+                ok = a < 0.02 && corner > 0.98
+                print("透明洞 alpha=\(a)（應≈0）, 邊角 alpha=\(corner)（應≈1）")
+            }
+        }
+        print(ok ? "✓ 透明示範完成，PNG 保留透明" : "✗ 透明示範失敗")
+        return ok
+    }
+
     /// 放大渲染所有工具游標到 PNG，方便視覺檢驗。
     static func renderCursors(outputPath: String) -> Bool {
         _ = NSApplication.shared

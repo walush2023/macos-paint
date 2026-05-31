@@ -1,5 +1,17 @@
 import AppKit
 
+// MARK: - 透明色
+
+extension NSColor {
+    /// 「透明色」：alpha 0。用它繪圖會把像素清成透明。
+    static let paintTransparent = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)
+
+    /// 此色是否被視為透明（用於切換 .clear 合成模式）。
+    var isPaintTransparent: Bool {
+        (usingColorSpace(.deviceRGB)?.alphaComponent ?? alphaComponent) < 0.004
+    }
+}
+
 // MARK: - Tools
 
 enum Tool: String, CaseIterable {

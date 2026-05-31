@@ -15,6 +15,10 @@ if args.count >= 3, args[1] == "--render-window" {
     let ok = UISnapshot.run(outputPath: args[2])
     exit(ok ? 0 : 1)
 }
+if args.count >= 4, args[1] == "--transparency-demo" {
+    let ok = UISnapshot.renderTransparencyDemo(viewPath: args[2], pngPath: args[3])
+    exit(ok ? 0 : 1)
+}
 if args.count >= 3, args[1] == "--cursor-preview" {
     let ok = UISnapshot.renderCursors(outputPath: args[2])
     exit(ok ? 0 : 1)

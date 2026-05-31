@@ -27,6 +27,10 @@ enum UnitTests {
             ("zoomStep25",         testZoomStep25),
             ("cursorMapping",      testCursorMapping),
             ("fillTolerance",      testFillTolerance),
+            ("transparentFill",    testTransparentFill),
+            ("coverTransparent",   testCoverTransparentWithOpaque),
+            ("transparentEraser",  testTransparentEraser),
+            ("pngPreservesAlpha",  testPNGPreservesAlpha),
         ]
         for (_, fn) in tests { fn() }
 
@@ -430,6 +434,59 @@ enum UnitTests {
         assertEq("tol30.block.filled", pixel(of: cv2, 40, 30)!.0, 255)
 
         PaintState.shared.fillTolerance = 0  // 還原，避免污染其他測試
+    }
+
+    static func testTransparentFill() {
+        let cv = makeCanvas(40, 30)  // 預設白色不透明
+        assertEq("trans.before.alpha", pixel(of: cv, 10, 10)!.3, 255)
+        PaintState.shared.fillTolerance = 0
+        cv.testFloodFill(at: NSPoint(x: 10, y: 10), with: .paintTransparent)
+        assertEq("trans.fill.alpha0", pixel(of: cv, 10, 10)!.3, 0)
+    }
+
+    static func testCoverTransparentWithOpaque() {
+        let cv = makeCanvas(40, 30)
+        cv.testFloodFill(at: NSPoint(x: 10, y: 10), with: .paintTransparent)  // 整面清成透明
+        assertEq("cover.cleared.alpha0", pixel(of: cv, 10, 10)!.3, 0)
+        let red = NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1)
+        cv.testFloodFill(at: NSPoint(x: 10, y: 10), with: red)               // 不透明色覆蓋透明
+        let p = pixel(of: cv, 10, 10)!
+        assertEq("cover.red.r", p.0, 255)
+        assertEq("cover.red.alpha", p.3, 255)
+    }
+
+    static func testTransparentEraser() {
+        let cv = makeCanvas(40, 30)
+        cv.drawInBitmap { _ in NSColor.black.setFill(); NSRect(x: 0, y: 0, width: 40, height: 30).fill() }
+        assertEq("eraseT.before.alpha", pixel(of: cv, 20, 15)!.3, 255)
+        PaintState.shared.color2 = .paintTransparent   // 背景色設透明
+        PaintState.shared.strokeSize = 10
+        cv.testStroke(from: NSPoint(x: 20, y: 15), to: NSPoint(x: 20, y: 15), tool: .eraser)
+        assertTrue("eraseT.after.alpha0", pixel(of: cv, 20, 15)!.3 < 10)
+        PaintState.shared.color2 = .white
+        PaintState.shared.strokeSize = 3
+    }
+
+    static func testPNGPreservesAlpha() {
+        let cv = makeCanvas(40, 30)
+        cv.testFloodFill(at: NSPoint(x: 5, y: 5), with: .paintTransparent)  // 整面透明
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1).setFill()
+            NSRect(x: 10, y: 8, width: 16, height: 14).fill()              // 中央不透明藍塊
+        }
+        guard let data = cv.exportData(fileType: .png) else { failures.append("png.export.fail"); return }
+        let path = NSTemporaryDirectory() + "paint-alpha-test.png"
+        try? data.write(to: URL(fileURLWithPath: path))
+        guard let img = NSImage(contentsOfFile: path),
+              let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { failures.append("png.reload.fail"); return }
+        // 角落（透明區）alpha 應 ~0
+        let aCorner = rep.colorAt(x: 2, y: 2)?.alphaComponent ?? -1
+        assertTrue("png.transparent.kept", aCorner < 0.02)
+        // 藍塊中心 alpha 應 ~1（data 座標：視覺 (18,15) → top-left y = 30-1-15）
+        let blue = rep.colorAt(x: 18, y: 30 - 1 - 15)
+        assertTrue("png.opaque.kept", (blue?.alphaComponent ?? 0) > 0.98)
+        assertTrue("png.opaque.isBlue", (blue?.blueComponent ?? 0) > 0.9)
     }
 
     static func testPaletteContainsExpectedColors() {
