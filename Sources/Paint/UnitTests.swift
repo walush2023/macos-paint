@@ -45,6 +45,8 @@ enum UnitTests {
             ("undoRemovesFloat",   testUndoRemovesFloatingInsert),
             ("cropKeepsAlpha",     testCropPreservesTransparency),
             ("roundedIcon",        testRoundedIcon),
+            ("textRender",         testTextRendersToBitmap),
+            ("textFont",           testCurrentTextFont),
         ]
         for (_, fn) in tests { fn() }
 
@@ -803,6 +805,39 @@ enum UnitTests {
         assertTrue("icon.corner.transparent", (rep.colorAt(x: 8, y: 8)?.alphaComponent ?? 1) < 0.02)
         // 內部不透明（白底/內容）
         assertTrue("icon.center.opaque", (rep.colorAt(x: 512, y: 512)?.alphaComponent ?? 0) > 0.98)
+    }
+
+    static func testTextRendersToBitmap() {
+        let cv = makeCanvas(160, 60)
+        // 白底，在中央偏左畫紅色粗體文字
+        let font = NSFontManager.shared.convert(NSFont.systemFont(ofSize: 28), toHaveTrait: .boldFontMask)
+        cv.testCommitText("Hello", at: NSPoint(x: 8, y: 45),
+                          font: font, color: NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1),
+                          underline: true)
+        // 文字區域應出現紅色像素（非全白）
+        var foundRed = false
+        for x in stride(from: 8, to: 120, by: 2) {
+            for y in stride(from: 10, to: 50, by: 2) {
+                let p = pixel(of: cv, x, y)!
+                if p.0 > 180 && p.1 < 80 && p.2 < 80 { foundRed = true; break }
+            }
+            if foundRed { break }
+        }
+        assertTrue("text.rendered.red", foundRed)
+    }
+
+    static func testCurrentTextFont() {
+        let s = PaintState.shared
+        let savedName = s.textFontName, savedSize = s.textFontSize
+        let savedB = s.textBold, savedI = s.textItalic
+        s.textFontName = NSFont.systemFont(ofSize: 20).fontName
+        s.textFontSize = 36
+        s.textBold = true; s.textItalic = false
+        let f = s.currentTextFont()
+        assertEq("font.size", Int(f.pointSize), 36)
+        assertTrue("font.bold", NSFontManager.shared.traits(of: f).contains(.boldFontMask))
+        s.textFontName = savedName; s.textFontSize = savedSize
+        s.textBold = savedB; s.textItalic = savedI
     }
 
     static func testPaletteContainsExpectedColors() {

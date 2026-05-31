@@ -72,6 +72,23 @@ final class PaintState {
     var showRulers: Bool = false
     var showStatusBar: Bool = true
 
+    // 文字工具屬性
+    var textFontName: String = NSFont.systemFont(ofSize: 24).fontName
+    var textFontSize: CGFloat = 24
+    var textBold: Bool = false
+    var textItalic: Bool = false
+    var textUnderline: Bool = false
+
+    /// 依目前文字設定組出 NSFont（含粗體/斜體）。
+    func currentTextFont() -> NSFont {
+        let base = NSFont(name: textFontName, size: textFontSize) ?? NSFont.systemFont(ofSize: textFontSize)
+        var font = base
+        let fm = NSFontManager.shared
+        if textBold   { font = fm.convert(font, toHaveTrait: .boldFontMask) }
+        if textItalic { font = fm.convert(font, toHaveTrait: .italicFontMask) }
+        return font
+    }
+
     var customPalette: [NSColor] = []  // user added custom colors
 
     // Notifications
@@ -85,6 +102,7 @@ final class PaintState {
     static let viewChanged   = Notification.Name("paint.viewChanged")
     static let statusUpdate  = Notification.Name("paint.statusUpdate")
     static let toleranceChanged = Notification.Name("paint.toleranceChanged")
+    static let textFormatChanged = Notification.Name("paint.textFormatChanged")
 }
 
 // MARK: - Standard Palette (Windows Paint colors)

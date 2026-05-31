@@ -43,6 +43,27 @@ if args.count >= 4, args[1] == "--make-icon" {
     let ok = IconMaker.makeRoundedIcon(input: args[2], output: args[3])
     exit(ok ? 0 : 1)
 }
+if args.count >= 3, args[1] == "--text-demo" {
+    let ok = UISnapshot.renderTextDemo(outputPath: args[2])
+    exit(ok ? 0 : 1)
+}
+if args.count >= 3, args[1] == "--text-panel" {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    let p = TextFormatPanel.shared
+    p.showWindow(nil)
+    guard let cv = p.window?.contentView else { exit(1) }
+    cv.layoutSubtreeIfNeeded()
+    p.window?.display()
+    if let rep = cv.bitmapImageRepForCachingDisplay(in: cv.bounds) {
+        cv.cacheDisplay(in: cv.bounds, to: rep)
+        if let d = rep.representation(using: .png, properties: [:]) {
+            try? d.write(to: URL(fileURLWithPath: args[2]))
+            print("✓ 已產出文字面板快照: \(args[2])")
+        }
+    }
+    exit(0)
+}
 if args.count >= 4, args[1] == "--transparency-demo" {
     let ok = UISnapshot.renderTransparencyDemo(viewPath: args[2], pngPath: args[3])
     exit(ok ? 0 : 1)

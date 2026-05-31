@@ -55,22 +55,34 @@ final class CanvasView: NSView {
             self, selector: #selector(handleToolChanged),
             name: PaintState.toolChanged, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleColorChangedForText),
+            name: PaintState.colorChanged, object: nil
+        )
     }
     required init?(coder: NSCoder) { fatalError() }
 
     deinit { marchingTimer?.invalidate() }
 
     @objc private func handleToolChanged() {
-        // 切換到非選取工具時，合入並結束目前的浮動選取
         let t = PaintState.shared.tool
+        // 切換到非文字工具時，合入正在編輯的文字
+        if t != .text, activeTextField != nil { commitText() }
+        // 切換到非選取工具時，合入並結束目前的浮動選取
         if t != .selectRect, t != .selectFree, selectionRect != nil {
             commitSelection()
         }
         window?.invalidateCursorRects(for: self)
     }
 
-    /// ESC：合入並取消目前選取狀態。
+    /// 編輯文字時 color1 改變 → 即時套用到文字。
+    @objc private func handleColorChangedForText() {
+        if activeTextField != nil { TextFormatPanel.shared.apply() }
+    }
+
+    /// ESC：合入並取消目前選取/文字狀態。
     override func cancelOperation(_ sender: Any?) {
+        if activeTextField != nil { commitText(); return }
         if selectionRect != nil || selectionPath != nil {
             commitSelection()
         }
@@ -616,6 +628,7 @@ final class CanvasView: NSView {
         case .picker:
             pickColor(at: pc, intoSecondary: dragButton == 1)
         case .text:
+            if activeTextField != nil { commitText() }   // 已在編輯 → 先合入再開新的
             beginText(at: pc)
         case .magnifier:
             let factor: CGFloat = dragButton == 1 ? 0.5 : 2.0
@@ -1265,38 +1278,69 @@ final class CanvasView: NSView {
 
     // MARK: - Text tool
 
+    private var textAnchorTopLeft: NSPoint = .zero   // 文字左上角（畫布座標）
+
     private func beginText(at p: NSPoint) {
-        let tv = NSTextView(frame: NSRect(x: p.x, y: p.y, width: 200, height: 40))
-        tv.isRichText = false
+        let font = PaintState.shared.currentTextFont()
+        textAnchorTopLeft = p
+        let h: CGFloat = max(40, font.pointSize * 1.8)
+        let tv = NSTextView(frame: NSRect(x: p.x, y: p.y - h, width: 320, height: h))
+        tv.isRichText = true
         tv.drawsBackground = false
         tv.backgroundColor = .clear
         tv.textColor = PaintState.shared.color1
-        tv.font = activeTextFont
+        tv.font = font
+        tv.isVerticallyResizable = true
+        tv.isHorizontallyResizable = false
+        tv.textContainerInset = NSSize(width: 0, height: 0)
+        tv.textContainer?.lineFragmentPadding = 0
         addSubview(tv)
         window?.makeFirstResponder(tv)
         activeTextField = tv
+
+        // 顯示文字格式面板（字型/字級/粗體/斜體/底線/顏色）
+        let winPt = convert(p, to: nil)
+        let screenPt = window?.convertPoint(toScreen: winPt) ?? winPt
+        TextFormatPanel.shared.show(for: tv, near: screenPt) { [weak self] in
+            self?.fitTextView()
+        }
     }
+
+    /// 依目前文字內容/字型重算編輯框大小，左上角固定在 anchor。
+    private func fitTextView() {
+        guard let tv = activeTextField else { return }
+        tv.layoutManager?.ensureLayout(for: tv.textContainer!)
+        let used = tv.layoutManager?.usedRect(for: tv.textContainer!).size ?? tv.frame.size
+        let w = max(60, used.width + 6)
+        let h = max(tv.font?.pointSize ?? 24, used.height) + 6
+        tv.frame = NSRect(x: textAnchorTopLeft.x, y: textAnchorTopLeft.y - h, width: w, height: h)
+    }
+
     func commitText() {
         guard let tv = activeTextField else { return }
-        let text = tv.string
+        let attr = tv.attributedString()
         let frame = tv.frame
-        let font = tv.font ?? activeTextFont
+        TextFormatPanel.shared.hide()
         tv.removeFromSuperview()
         activeTextField = nil
-        if !text.isEmpty {
-            let color = PaintState.shared.color1
+        if attr.length > 0 {
             drawInBitmap { _ in
-                let style = NSMutableParagraphStyle()
-                style.alignment = .left
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: color,
-                    .paragraphStyle: style
-                ]
-                let attr = NSAttributedString(string: text, attributes: attrs)
                 attr.draw(in: frame)
             }
             pushHistory()
         }
+    }
+
+    var isEditingText: Bool { activeTextField != nil }
+
+    /// 給單元測試：直接把文字（含字型/顏色/底線）繪入底圖。topLeft 為文字左上角（視覺座標）。
+    func testCommitText(_ s: String, at topLeft: NSPoint, font: NSFont, color: NSColor, underline: Bool) {
+        var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        if underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+        let attr = NSAttributedString(string: s, attributes: attrs)
+        let size = attr.size()
+        let frame = NSRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width + 4, height: size.height + 2)
+        drawInBitmap { _ in attr.draw(in: frame) }
+        pushHistory()
     }
 }

@@ -43,6 +43,34 @@ enum UISnapshot {
         }
     }
 
+    /// 文字示範：在畫布上以不同字型/樣式繪製文字，渲染結果。
+    static func renderTextDemo(outputPath: String) -> Bool {
+        _ = NSApplication.shared
+        let cv = CanvasView(size: NSSize(width: 420, height: 220))
+        cv.setFrameSize(NSSize(width: 420, height: 220))
+        let fm = NSFontManager.shared
+        var f1 = NSFont(name: "Helvetica", size: 34) ?? NSFont.systemFont(ofSize: 34)
+        f1 = fm.convert(f1, toHaveTrait: .boldFontMask)
+        cv.testCommitText("Paint for macOS", at: NSPoint(x: 20, y: 190),
+                          font: f1, color: NSColor(srgbRed: 0.1, green: 0.3, blue: 0.8, alpha: 1), underline: false)
+        var f2 = NSFont(name: "Times New Roman", size: 30) ?? NSFont.systemFont(ofSize: 30)
+        f2 = fm.convert(f2, toHaveTrait: .italicFontMask)
+        cv.testCommitText("Italic text", at: NSPoint(x: 20, y: 135),
+                          font: f2, color: NSColor(srgbRed: 0.8, green: 0.2, blue: 0.2, alpha: 1), underline: false)
+        cv.testCommitText("Underlined 文字", at: NSPoint(x: 20, y: 85),
+                          font: NSFont.systemFont(ofSize: 28),
+                          color: NSColor(srgbRed: 0.1, green: 0.6, blue: 0.2, alpha: 1), underline: true)
+        if let rep = cv.bitmapImageRepForCachingDisplay(in: cv.bounds) {
+            cv.cacheDisplay(in: cv.bounds, to: rep)
+            if let d = rep.representation(using: .png, properties: [:]) {
+                try? d.write(to: URL(fileURLWithPath: outputPath))
+                print("✓ 已產出文字示範: \(outputPath)")
+                return true
+            }
+        }
+        return false
+    }
+
     /// 裁剪保留透明示範：透明底 + 紅圓 → 選取裁剪 → 渲染畫布（透明區應露出棋盤，而非白）。
     static func renderCropDemo(outputPath: String) -> Bool {
         _ = NSApplication.shared
