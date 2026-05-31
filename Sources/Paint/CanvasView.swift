@@ -37,6 +37,10 @@ final class CanvasView: NSView {
     private var activeTextField: NSTextView?
     private var activeTextFont: NSFont = NSFont.systemFont(ofSize: 16)
 
+    /// 拖放圖片進來時的回呼（由 MainWindowController 設定，以更新標題/dirty 狀態）。
+    var onDropImage: ((NSImage, URL?) -> Void)?
+    private var isDragHighlight = false
+
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { true }
 
@@ -44,12 +48,74 @@ final class CanvasView: NSView {
         super.init(frame: NSRect(origin: .zero, size: size))
         wantsLayer = true
         layer?.backgroundColor = NSColor.white.cgColor
+        registerForDraggedTypes([.fileURL, .png, .tiff])
         resetCanvas(size: size, fill: .white)
         startMarchingAntsTimer()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleToolChanged),
+            name: PaintState.toolChanged, object: nil
+        )
     }
     required init?(coder: NSCoder) { fatalError() }
 
     deinit { marchingTimer?.invalidate() }
+
+    @objc private func handleToolChanged() {
+        window?.invalidateCursorRects(for: self)
+    }
+
+    // 依當前工具設定游標
+    override func resetCursorRects() {
+        discardCursorRects()
+        addCursorRect(bounds, cursor: Cursors.cursor(for: PaintState.shared.tool))
+    }
+
+    // MARK: - Drag & drop (拖放圖片載入)
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if canAcceptDrag(sender) {
+            isDragHighlight = true
+            needsDisplay = true
+            return .copy
+        }
+        return []
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        isDragHighlight = false
+        needsDisplay = true
+    }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        canAcceptDrag(sender)
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        isDragHighlight = false
+        needsDisplay = true
+        let pb = sender.draggingPasteboard
+
+        // 1) 檔案 URL
+        if let urls = pb.readObjects(forClasses: [NSURL.self],
+                                     options: [.urlReadingContentsConformToTypes: ["public.image"]]) as? [URL],
+           let url = urls.first, let img = NSImage(contentsOf: url) {
+            onDropImage?(img, url)
+            return true
+        }
+        // 2) 直接的影像資料
+        if let images = pb.readObjects(forClasses: [NSImage.self], options: nil) as? [NSImage],
+           let img = images.first {
+            onDropImage?(img, nil)
+            return true
+        }
+        return false
+    }
+    private func canAcceptDrag(_ sender: NSDraggingInfo) -> Bool {
+        let pb = sender.draggingPasteboard
+        if pb.canReadObject(forClasses: [NSImage.self], options: nil) { return true }
+        if let types = pb.types, types.contains(.fileURL) {
+            return pb.canReadObject(forClasses: [NSURL.self],
+                                    options: [.urlReadingContentsConformToTypes: ["public.image"]])
+        }
+        return false
+    }
 
     // MARK: - Canvas management
 
@@ -237,6 +303,17 @@ final class CanvasView: NSView {
                 path.line(to: NSPoint(x: bounds.width, y: y))
             }
             path.stroke()
+        }
+
+        // 5) 拖放高亮
+        if isDragHighlight {
+            NSColor(red: 0.2, green: 0.5, blue: 0.95, alpha: 0.15).setFill()
+            bounds.fill()
+            NSColor(red: 0.2, green: 0.5, blue: 0.95, alpha: 0.9).setStroke()
+            let border = NSBezierPath(rect: bounds.insetBy(dx: 2, dy: 2))
+            border.lineWidth = 4
+            border.setLineDash([10, 6], count: 2, phase: 0)
+            border.stroke()
         }
     }
 

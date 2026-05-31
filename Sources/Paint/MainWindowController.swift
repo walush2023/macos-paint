@@ -79,6 +79,14 @@ final class MainWindowController: NSWindowController {
         docView.wantsLayer = true
         scrollView.documentView = docView
         canvas.frame = NSRect(x: 20, y: docView.bounds.height - 620, width: 800, height: 600)
+        canvas.onDropImage = { [weak self] img, url in
+            guard let self = self else { return }
+            self.canvas.loadImage(img)
+            self.currentFileURL = url
+            self.isDirty = (url == nil)   // 從檔案拖入視為已開啟；貼上影像視為已修改
+            self.updateTitle()
+            self.layoutDocument()
+        }
         docView.addSubview(canvas)
     }
 
@@ -354,10 +362,16 @@ final class MainWindowController: NSWindowController {
 // MARK: - Status bar
 
 final class StatusBarView: NSView {
+    static let zoomMin: Double = 25
+    static let zoomMax: Double = 800
+    static let zoomStep: Double = 25
+
     private let posLabel = NSTextField(labelWithString: "📐 0, 0 px")
     private let sizeLabel = NSTextField(labelWithString: "⤢ 800 × 600 px")
     private let zoomLabel = NSTextField(labelWithString: "100%")
-    private let zoomSlider = NSSlider(value: 100, minValue: 10, maxValue: 800, target: nil, action: nil)
+    private let zoomSlider = NSSlider(value: 100, minValue: zoomMin, maxValue: zoomMax, target: nil, action: nil)
+    private let minusBtn = NSButton()
+    private let plusBtn = NSButton()
 
     init() {
         super.init(frame: .zero)
@@ -370,6 +384,16 @@ final class StatusBarView: NSView {
             lbl.isBordered = false
             addSubview(lbl)
         }
+        zoomLabel.alignment = .right
+
+        configureStepButton(minusBtn, symbol: "−")
+        minusBtn.action = #selector(zoomMinus(_:))
+        addSubview(minusBtn)
+
+        configureStepButton(plusBtn, symbol: "+")
+        plusBtn.action = #selector(zoomPlus(_:))
+        addSubview(plusBtn)
+
         zoomSlider.target = self
         zoomSlider.action = #selector(zoomChanged(_:))
         zoomSlider.isContinuous = true
@@ -384,6 +408,15 @@ final class StatusBarView: NSView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    private func configureStepButton(_ btn: NSButton, symbol: String) {
+        btn.title = symbol
+        btn.bezelStyle = .roundRect
+        btn.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+        btn.target = self
+        btn.setButtonType(.momentaryPushIn)
+        btn.contentTintColor = .black
+    }
+
     @objc private func syncFromState() {
         let pct = Int(PaintState.shared.zoom * 100)
         zoomLabel.stringValue = "\(pct)%"
@@ -396,9 +429,19 @@ final class StatusBarView: NSView {
         super.layout()
         posLabel.frame = NSRect(x: 8, y: 4, width: 130, height: 18)
         sizeLabel.frame = NSRect(x: 150, y: 4, width: 150, height: 18)
-        let rightW: CGFloat = 220
-        zoomSlider.frame = NSRect(x: bounds.width - rightW, y: 4, width: 130, height: 18)
-        zoomLabel.frame = NSRect(x: bounds.width - 80, y: 4, width: 60, height: 18)
+        // 右側：[−] [====slider====] [+]  100%
+        let labelW: CGFloat = 52
+        let btnW: CGFloat = 26
+        let sliderW: CGFloat = 120
+        let gap: CGFloat = 4
+        var x = bounds.width - 8 - labelW
+        zoomLabel.frame = NSRect(x: x, y: 4, width: labelW, height: 18)
+        x -= gap + btnW
+        plusBtn.frame = NSRect(x: x, y: 2, width: btnW, height: 20)
+        x -= gap + sliderW
+        zoomSlider.frame = NSRect(x: x, y: 4, width: sliderW, height: 18)
+        x -= gap + btnW
+        minusBtn.frame = NSRect(x: x, y: 2, width: btnW, height: 20)
     }
 
     func update(x: Int, y: Int, canvasSize: NSSize) {
@@ -410,6 +453,24 @@ final class StatusBarView: NSView {
 
     @objc private func zoomChanged(_ sender: NSSlider) {
         PaintState.shared.zoom = CGFloat(sender.doubleValue / 100.0)
+        NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
+    }
+
+    /// 以 25% 為單位往上跳到下一個整數倍。
+    @objc private func zoomPlus(_ sender: Any?) {
+        let cur = Double(PaintState.shared.zoom * 100)
+        let stepped = (floor(cur / StatusBarView.zoomStep) + 1) * StatusBarView.zoomStep
+        applyZoomPct(min(StatusBarView.zoomMax, stepped))
+    }
+    /// 以 25% 為單位往下跳到下一個整數倍。
+    @objc private func zoomMinus(_ sender: Any?) {
+        let cur = Double(PaintState.shared.zoom * 100)
+        var stepped = (ceil(cur / StatusBarView.zoomStep) - 1) * StatusBarView.zoomStep
+        if stepped < StatusBarView.zoomMin { stepped = StatusBarView.zoomMin }
+        applyZoomPct(stepped)
+    }
+    private func applyZoomPct(_ pct: Double) {
+        PaintState.shared.zoom = CGFloat(pct / 100.0)
         NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
     }
 }
