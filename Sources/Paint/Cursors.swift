@@ -146,20 +146,25 @@ enum Cursors {
     // MARK: - 十字準心 (選取 / 形狀)
 
     private static func makeCrosshair() -> NSCursor {
-        let img = image(24) {
-            let c: CGFloat = 12, arm: CGFloat = 9, gap: CGFloat = 2.5
+        // 清楚的十字準心：四臂明顯，中央以白圈包黑點精準標示「起點」。
+        let size: CGFloat = 28
+        let c: CGFloat = 14, arm: CGFloat = 12, gap: CGFloat = 3
+        let img = image(size, scale: 2) {
             let p = NSBezierPath()
             p.move(to: NSPoint(x: c, y: c + gap)); p.line(to: NSPoint(x: c, y: c + arm))
             p.move(to: NSPoint(x: c, y: c - gap)); p.line(to: NSPoint(x: c, y: c - arm))
             p.move(to: NSPoint(x: c + gap, y: c)); p.line(to: NSPoint(x: c + arm, y: c))
             p.move(to: NSPoint(x: c - gap, y: c)); p.line(to: NSPoint(x: c - arm, y: c))
-            NSColor.white.setStroke(); p.lineWidth = 3; p.stroke()
-            NSColor.black.setStroke(); p.lineWidth = 1.2; p.stroke()
-            // 中心點
-            let dot = NSBezierPath(ovalIn: NSRect(x: c - 0.7, y: c - 0.7, width: 1.4, height: 1.4))
+            NSColor.white.setStroke(); p.lineWidth = 4; p.lineCapStyle = .round; p.stroke()
+            NSColor.black.setStroke(); p.lineWidth = 1.8; p.stroke()
+            // 精準起點：白圈 + 實心黑點，正落在 hotSpot
+            let ring = NSBezierPath(ovalIn: NSRect(x: c - 2.4, y: c - 2.4, width: 4.8, height: 4.8))
+            NSColor.white.setFill(); ring.fill()
+            NSColor.black.setStroke(); ring.lineWidth = 0.8; ring.stroke()
+            let dot = NSBezierPath(ovalIn: NSRect(x: c - 1.1, y: c - 1.1, width: 2.2, height: 2.2))
             NSColor.black.setFill(); dot.fill()
         }
-        return NSCursor(image: img, hotSpot: NSPoint(x: 12, y: 12))
+        return NSCursor(image: img, hotSpot: NSPoint(x: c, y: size - c))
     }
 
     // MARK: - 筆刷（準心 + 筆觸點）
