@@ -75,13 +75,20 @@ final class RibbonView: NSView {
         nc.addObserver(self, selector: #selector(refreshHighlights), name: PaintState.sizeChanged, object: nil)
     }
 
+    /// 記錄目前 home tab 是否含容許度群組（油漆桶啟用時才顯示）。
+    private var toleranceShown = false
+
     private func buildLayout() {
         var x: CGFloat = 6
 
         x = buildClipboardGroup(x: x); x = drawSeparator(x: x)
         x = buildImageGroup(x: x); x = drawSeparator(x: x)
         x = buildToolsGroup(x: x); x = drawSeparator(x: x)
-        x = buildToleranceGroup(x: x); x = drawSeparator(x: x)
+        // 容許度：僅在選取油漆桶時情境顯示
+        toleranceShown = (PaintState.shared.tool == .fill)
+        if toleranceShown {
+            x = buildToleranceGroup(x: x); x = drawSeparator(x: x)
+        }
         x = buildBrushesGroup(x: x); x = drawSeparator(x: x)
         x = buildShapesGroup(x: x); x = drawSeparator(x: x)
         x = buildSizeGroup(x: x); x = drawSeparator(x: x)
@@ -652,6 +659,11 @@ final class RibbonView: NSView {
     // MARK: - Refresh
 
     @objc private func refreshHighlights() {
+        // 油漆桶啟用狀態改變 → 重建 home tab 以情境顯示/隱藏容許度群組
+        if currentTab == .home, (PaintState.shared.tool == .fill) != toleranceShown {
+            showHomeTab()
+            return
+        }
         for (tool, btn) in toolButtons {
             let on = PaintState.shared.tool == tool
                 || (tool == .selectRect && (PaintState.shared.tool == .selectFree))

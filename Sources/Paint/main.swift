@@ -12,6 +12,11 @@ if let i = args.firstIndex(of: "--lang"), i + 1 < args.count {
     }
     args.removeSubrange(i...(i + 1))
 }
+// 預覽用：--tool fill 等，預先設定工具
+if let i = args.firstIndex(of: "--tool"), i + 1 < args.count {
+    if let t = Tool(rawValue: args[i + 1]) { PaintState.shared.tool = t }
+    args.removeSubrange(i...(i + 1))
+}
 if args.count >= 3, args[1] == "--test" {
     // Headless self-test mode：跑過所有繪製路徑，匯出 PNG
     let ok = SelfTest.run(outputPath: args[2])

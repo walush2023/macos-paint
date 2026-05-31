@@ -61,7 +61,26 @@ final class CanvasView: NSView {
     deinit { marchingTimer?.invalidate() }
 
     @objc private func handleToolChanged() {
+        // 切換到非選取工具時，合入並結束目前的浮動選取
+        let t = PaintState.shared.tool
+        if t != .selectRect, t != .selectFree, selectionRect != nil {
+            commitSelection()
+        }
         window?.invalidateCursorRects(for: self)
+    }
+
+    /// ESC：合入並取消目前選取狀態。
+    override func cancelOperation(_ sender: Any?) {
+        if selectionRect != nil || selectionPath != nil {
+            commitSelection()
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {   // ESC
+            if selectionRect != nil || selectionPath != nil { commitSelection(); return }
+        }
+        super.keyDown(with: event)
     }
 
     // 依當前工具設定游標
@@ -161,6 +180,7 @@ final class CanvasView: NSView {
 
     /// 新增空白文件：建立空白畫布並清空歷史。
     func resetCanvas(size: NSSize, fill: NSColor = .white) {
+        discardSelection()   // 丟棄未合入的浮動圖片，避免新增後仍殘留
         guard let rep = makeBlankRep(size: size, fill: fill) else { return }
         installBitmap(rep, resetHistory: true)
     }
@@ -202,6 +222,12 @@ final class CanvasView: NSView {
     }
 
     func undo() {
+        // 尚未合入的浮動插入圖片：復原 = 直接移除它，不動歷史
+        if selectionImage != nil {
+            discardSelection()
+            needsDisplay = true
+            return
+        }
         guard let snap = history.undo() else { return }
         discardSelection()
         installBitmap(copyBitmap(snap), resetHistory: false)
