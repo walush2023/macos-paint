@@ -26,6 +26,73 @@ enum Cursors {
         let c = make(); cache[tool] = c; return c
     }
 
+    // MARK: - 縮放 / 移動游標（選取把手用）
+
+    /// 對角雙箭頭（↖↘）。
+    static let resizeNWSE: NSCursor = makeDoubleArrow(angle: -.pi / 4, hot: NSPoint(x: 12, y: 12))
+    /// 對角雙箭頭（↗↙）。
+    static let resizeNESW: NSCursor = makeDoubleArrow(angle: .pi / 4, hot: NSPoint(x: 12, y: 12))
+    /// 上下雙箭頭。
+    static let resizeNS: NSCursor = makeDoubleArrow(angle: .pi / 2, hot: NSPoint(x: 12, y: 12))
+    /// 左右雙箭頭。
+    static let resizeEW: NSCursor = makeDoubleArrow(angle: 0, hot: NSPoint(x: 12, y: 12))
+    /// 四向移動。
+    static let moveAll: NSCursor = makeMoveCursor()
+
+    private static func makeDoubleArrow(angle: CGFloat, hot: NSPoint) -> NSCursor {
+        let img = image(24) {
+            let c = NSPoint(x: 12, y: 12)
+            let len: CGFloat = 8, head: CGFloat = 3.5
+            let dx = cos(angle), dy = sin(angle)
+            let a = NSPoint(x: c.x - dx*len, y: c.y - dy*len)
+            let b = NSPoint(x: c.x + dx*len, y: c.y + dy*len)
+            let shaft = NSBezierPath()
+            shaft.move(to: a); shaft.line(to: b)
+            // 箭頭
+            func arrow(at p: NSPoint, dirX: CGFloat, dirY: CGFloat) {
+                let perpX = -dirY, perpY = dirX
+                shaft.move(to: p)
+                shaft.line(to: NSPoint(x: p.x - dirX*head + perpX*head, y: p.y - dirY*head + perpY*head))
+                shaft.move(to: p)
+                shaft.line(to: NSPoint(x: p.x - dirX*head - perpX*head, y: p.y - dirY*head - perpY*head))
+            }
+            arrow(at: b, dirX: dx, dirY: dy)
+            arrow(at: a, dirX: -dx, dirY: -dy)
+            NSColor.white.setStroke(); shaft.lineWidth = 3.4; shaft.lineCapStyle = .round; shaft.stroke()
+            NSColor.black.setStroke(); shaft.lineWidth = 1.5; shaft.stroke()
+        }
+        return NSCursor(image: img, hotSpot: hot)
+    }
+
+    private static func makeMoveCursor() -> NSCursor {
+        let img = image(24) {
+            let c = NSPoint(x: 12, y: 12)
+            let p = NSBezierPath()
+            for ang in stride(from: 0.0, to: 2 * .pi, by: .pi / 2) {
+                let dx = cos(ang), dy = sin(ang)
+                let tip = NSPoint(x: c.x + dx*9, y: c.y + dy*9)
+                let base = NSPoint(x: c.x + dx*4.5, y: c.y + dy*4.5)
+                let perpX = -dy, perpY = dx
+                p.move(to: base); p.line(to: tip)
+                p.move(to: tip); p.line(to: NSPoint(x: tip.x - dx*3.5 + perpX*3.5, y: tip.y - dy*3.5 + perpY*3.5))
+                p.move(to: tip); p.line(to: NSPoint(x: tip.x - dx*3.5 - perpX*3.5, y: tip.y - dy*3.5 - perpY*3.5))
+            }
+            NSColor.white.setStroke(); p.lineWidth = 3.4; p.lineCapStyle = .round; p.stroke()
+            NSColor.black.setStroke(); p.lineWidth = 1.5; p.stroke()
+        }
+        return NSCursor(image: img, hotSpot: NSPoint(x: 12, y: 12))
+    }
+
+    /// 依把手位置回傳對應的縮放游標。
+    static func resizeCursor(for handle: CanvasView.Handle) -> NSCursor {
+        switch handle {
+        case .nw, .se: return resizeNWSE
+        case .ne, .sw: return resizeNESW
+        case .n, .s:   return resizeNS
+        case .e, .w:   return resizeEW
+        }
+    }
+
     // MARK: - 繪圖基礎
 
     /// 以 2x 點陣繪製 size×size 點的游標圖，回傳 retina-ready NSImage。

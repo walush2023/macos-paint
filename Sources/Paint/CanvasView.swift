@@ -506,13 +506,27 @@ final class CanvasView: NSView {
     override func rightMouseUp(with event: NSEvent) { handleMouseUp(canvasPoint(event), event: event) }
 
     override func mouseMoved(with event: NSEvent) {
-        let p = clampToCanvas(canvasPoint(event))
+        let raw = canvasPoint(event)
+        let p = clampToCanvas(raw)
         let imgY = CGFloat(bitmap.pixelsHigh) - p.y
         NotificationCenter.default.post(
             name: PaintState.statusUpdate,
             object: nil,
             userInfo: ["x": Int(p.x), "y": Int(imgY)]
         )
+        updateHoverCursor(at: raw)
+    }
+
+    /// 滑鼠停在選取上時，依把手/內部切換縮放或移動游標。
+    private func updateHoverCursor(at p: NSPoint) {
+        guard let sel = selectionRect else { return }   // 無選取 → 交給 cursorRect 的工具游標
+        if let h = handleAt(p) {
+            Cursors.resizeCursor(for: h).set()
+        } else if sel.contains(p) {
+            Cursors.moveAll.set()
+        } else {
+            Cursors.cursor(for: PaintState.shared.tool).set()
+        }
     }
 
     override func updateTrackingAreas() {
