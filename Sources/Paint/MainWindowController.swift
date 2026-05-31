@@ -456,18 +456,21 @@ final class StatusBarView: NSView {
         NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
     }
 
-    /// 以 25% 為單位往上跳到下一個整數倍。
-    @objc private func zoomPlus(_ sender: Any?) {
-        let cur = Double(PaintState.shared.zoom * 100)
-        let stepped = (floor(cur / StatusBarView.zoomStep) + 1) * StatusBarView.zoomStep
-        applyZoomPct(min(StatusBarView.zoomMax, stepped))
+    /// 從目前百分比，以 25% 為單位跳到下一個整數倍（up=true 放大）。純函式，方便測試。
+    static func nextZoomPct(from cur: Double, up: Bool) -> Double {
+        if up {
+            return min(zoomMax, (floor(cur / zoomStep) + 1) * zoomStep)
+        } else {
+            let stepped = (ceil(cur / zoomStep) - 1) * zoomStep
+            return max(zoomMin, stepped)
+        }
     }
-    /// 以 25% 為單位往下跳到下一個整數倍。
+
+    @objc private func zoomPlus(_ sender: Any?) {
+        applyZoomPct(StatusBarView.nextZoomPct(from: Double(PaintState.shared.zoom * 100), up: true))
+    }
     @objc private func zoomMinus(_ sender: Any?) {
-        let cur = Double(PaintState.shared.zoom * 100)
-        var stepped = (ceil(cur / StatusBarView.zoomStep) - 1) * StatusBarView.zoomStep
-        if stepped < StatusBarView.zoomMin { stepped = StatusBarView.zoomMin }
-        applyZoomPct(stepped)
+        applyZoomPct(StatusBarView.nextZoomPct(from: Double(PaintState.shared.zoom * 100), up: false))
     }
     private func applyZoomPct(_ pct: Double) {
         PaintState.shared.zoom = CGFloat(pct / 100.0)

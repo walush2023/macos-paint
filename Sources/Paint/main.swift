@@ -15,6 +15,11 @@ if args.count >= 3, args[1] == "--render-window" {
     let ok = UISnapshot.run(outputPath: args[2])
     exit(ok ? 0 : 1)
 }
+if args.count >= 4, args[1] == "--drop-test" {
+    // 模擬拖放圖片載入：--drop-test <輸入圖片> <輸出快照>
+    let ok = UISnapshot.runDrop(imagePath: args[2], outputPath: args[3])
+    exit(ok ? 0 : 1)
+}
 
 let app = NSApplication.shared
 let delegate = AppDelegate()

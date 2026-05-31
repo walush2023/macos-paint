@@ -7,28 +7,34 @@ enum UnitTests {
 
     static func runAll() -> Bool {
         failures = []
-        testHistoryUndoRedo()
-        testFloodFill()
-        testSelectionLiftCommit()
-        testFileRoundTripPNG()
-        testRotate90DimensionsSwap()
-        testFlipHorizontal()
-        testScaleCanvas()
-        testPaletteContainsExpectedColors()
-        testSelectionResizeHandles()
-        testPasteImageBecomesSelection()
-        testZoomDoesNotAffectBitmapCoordinates()
-        testCropToSelection()
-        testHistoryAcrossMultipleEdits()
-        testEraseLeavesSecondaryColor()
-        testRotate180Twice()
-        testFlipVertical()
+        let tests: [(String, () -> Void)] = [
+            ("history",            testHistoryUndoRedo),
+            ("floodFill",          testFloodFill),
+            ("selectionLift",      testSelectionLiftCommit),
+            ("fileRoundTrip",      testFileRoundTripPNG),
+            ("rotate90",           testRotate90DimensionsSwap),
+            ("flipH",              testFlipHorizontal),
+            ("scale",              testScaleCanvas),
+            ("palette",            testPaletteContainsExpectedColors),
+            ("resizeHandles",      testSelectionResizeHandles),
+            ("pasteSelection",     testPasteImageBecomesSelection),
+            ("zoomCoords",         testZoomDoesNotAffectBitmapCoordinates),
+            ("crop",               testCropToSelection),
+            ("historyMulti",       testHistoryAcrossMultipleEdits),
+            ("eraseSecondary",     testEraseLeavesSecondaryColor),
+            ("rotate180Twice",     testRotate180Twice),
+            ("flipV",              testFlipVertical),
+            ("zoomStep25",         testZoomStep25),
+            ("cursorMapping",      testCursorMapping),
+        ]
+        for (_, fn) in tests { fn() }
 
         if failures.isEmpty {
-            print("✓ 所有測試通過")
+            print("✓ 全部 \(tests.count) 項測試通過")
             return true
         } else {
-            for f in failures { print("✗ \(f)") }
+            print("✗ \(failures.count) 項失敗 / 共 \(tests.count) 項")
+            for f in failures { print("  ✗ \(f)") }
             return false
         }
     }
@@ -364,6 +370,35 @@ enum UnitTests {
         let pBot = pixel(of: cv, 20, 5)!
         assertEq("flip.v.top.black", pTop.0, 0)
         assertEq("flip.v.bot.white", pBot.0, 255)
+    }
+
+    static func testZoomStep25() {
+        // 100% → +25 = 125, −25 = 75
+        assertEq("zoom.100.up",   StatusBarView.nextZoomPct(from: 100, up: true),  125)
+        assertEq("zoom.100.down", StatusBarView.nextZoomPct(from: 100, up: false), 75)
+        // 非整數倍會吸附：110 → up 125, down 100
+        assertEq("zoom.110.up",   StatusBarView.nextZoomPct(from: 110, up: true),  125)
+        assertEq("zoom.110.down", StatusBarView.nextZoomPct(from: 110, up: false), 100)
+        // 邊界夾制
+        assertEq("zoom.max.clamp", StatusBarView.nextZoomPct(from: 800, up: true),  800)
+        assertEq("zoom.min.clamp", StatusBarView.nextZoomPct(from: 25,  up: false), 25)
+        // 從最小往下不應低於 25
+        assertEq("zoom.below.min", StatusBarView.nextZoomPct(from: 30,  up: false), 25)
+    }
+
+    static func testCursorMapping() {
+        // 文字 → I-beam，選取/形狀 → 十字
+        assertTrue("cursor.text.iBeam", Cursors.cursor(for: .text) === NSCursor.iBeam)
+        assertTrue("cursor.select.crosshair", Cursors.cursor(for: .selectRect) === NSCursor.crosshair)
+        assertTrue("cursor.shape.crosshair", Cursors.cursor(for: .shape) === NSCursor.crosshair)
+        // 繪圖工具應有自訂游標（非 arrow），且同工具回傳同一快取實例
+        let pencil1 = Cursors.cursor(for: .pencil)
+        let pencil2 = Cursors.cursor(for: .pencil)
+        assertTrue("cursor.pencil.cached", pencil1 === pencil2)
+        assertTrue("cursor.fill.notArrow", Cursors.cursor(for: .fill) !== NSCursor.arrow)
+        assertTrue("cursor.eraser.notArrow", Cursors.cursor(for: .eraser) !== NSCursor.arrow)
+        assertTrue("cursor.picker.notArrow", Cursors.cursor(for: .picker) !== NSCursor.arrow)
+        assertTrue("cursor.magnifier.notArrow", Cursors.cursor(for: .magnifier) !== NSCursor.arrow)
     }
 
     static func testPaletteContainsExpectedColors() {
