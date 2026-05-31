@@ -1,6 +1,17 @@
 import AppKit
 
-let args = CommandLine.arguments
+var args = CommandLine.arguments
+// 測試/預覽用：--lang en|zh-Hans|zh-Hant|ja 強制介面語言
+if let i = args.firstIndex(of: "--lang"), i + 1 < args.count {
+    switch args[i + 1].lowercased() {
+    case "en":               L10n.override = .en
+    case "zh-hans", "hans":  L10n.override = .zhHans
+    case "zh-hant", "hant":  L10n.override = .zhHant
+    case "ja":               L10n.override = .ja
+    default: break
+    }
+    args.removeSubrange(i...(i + 1))
+}
 if args.count >= 3, args[1] == "--test" {
     // Headless self-test mode：跑過所有繪製路徑，匯出 PNG
     let ok = SelfTest.run(outputPath: args[2])

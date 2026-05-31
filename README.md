@@ -16,9 +16,9 @@ No web view, no Electron, no external dependencies — just a single native `.ap
 
 **Paint for macOS** brings the classic Windows Paint experience to the Mac. It reproduces the Windows 7/10‑style **Ribbon** interface, the full tool set, the shape library, the color palette, and the editing workflow you remember — implemented from scratch on top of AppKit's `NSView`, `NSBitmapImageRep`, and `NSBezierPath`.
 
-The whole application is roughly **4,600 lines of Swift across 14 files**, with **23 automated tests** and a headless self‑test harness that renders the drawing engine and UI to PNG for visual verification.
+The whole application is roughly **5,000 lines of Swift across 16 files**, with **31 automated tests** and a headless self‑test harness that renders the drawing engine and UI to PNG for visual verification.
 
-> Interface language: **Traditional Chinese (繁體中文)**, mirroring the localized Windows Paint ribbon labels.
+> **Localized in 4 languages** — English, Traditional Chinese (繁體中文), Simplified Chinese (简体中文), and Japanese (日本語) — auto-selected from your macOS system language.
 
 ---
 
@@ -77,9 +77,14 @@ Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right tri
 - Image properties dialog
 - Unsaved‑changes confirmation
 
+### Localization
+- Full UI translated into **English · 繁體中文 · 简体中文 · 日本語**, auto‑selected from the macOS system language (falls back to English).
+
 ### Polish
 - Light‑appearance window matching Paint's look (readable in any system theme)
-- Custom **retina‑crisp tool cursors** drawn as vectors — a yellow segmented pencil, a tilting paint bucket with a pouring drop, a 3D pink eraser, a light‑blue eyedropper, a magnifier with a `+`, and precise crosshairs
+- Custom **retina‑crisp tool cursors** drawn as vectors — a yellow segmented pencil, a tilting paint bucket with a pouring drop, a 3D pink eraser, a light‑blue eyedropper, a magnifier with a `+`, precise crosshairs, plus diagonal/edge resize and 4‑way move cursors
+- **Canvas resize handles** (right / bottom / corner) drag to extend or crop the canvas; selection handles resize floating images
+- Snapshot‑based **undo/redo** that survives canvas‑size changes (resize, rotate, crop, image insert)
 - Ribbon laid out on a unified content band with a single type scale for tidy alignment
 
 ---

@@ -132,8 +132,8 @@ enum UISnapshot {
     static func renderCursors(outputPath: String) -> Bool {
         _ = NSApplication.shared
         let tools: [(Tool, String)] = [
-            (.pencil, "鉛筆"), (.brush, "筆刷"), (.fill, "油漆桶"),
-            (.eraser, "橡皮擦"), (.picker, "滴管"), (.magnifier, "放大鏡"),
+            (.pencil, tr("鉛筆")), (.brush, tr("筆刷")), (.fill, "油漆桶"),
+            (.eraser, tr("橡皮擦")), (.picker, "滴管"), (.magnifier, tr("放大鏡")),
             (.selectRect, "選取"), (.shape, "形狀"),
         ]
         let cell = 200, cols = 4

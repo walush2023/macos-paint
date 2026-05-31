@@ -16,15 +16,15 @@ final class TabBarView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor(calibratedRed: 0.815, green: 0.851, blue: 0.91, alpha: 1).cgColor
 
-        fileBtn = makeFileTabBtn(title: "檔案")
+        fileBtn = makeFileTabBtn(title: tr("檔案"))
         fileBtn.target = self; fileBtn.action = #selector(fileTapped)
         addSubview(fileBtn)
 
-        homeBtn = makeTabBtn(title: "常用")
+        homeBtn = makeTabBtn(title: tr("常用"))
         homeBtn.target = self; homeBtn.action = #selector(homeTapped)
         addSubview(homeBtn)
 
-        viewBtn = makeTabBtn(title: "檢視")
+        viewBtn = makeTabBtn(title: tr("檢視"))
         viewBtn.target = self; viewBtn.action = #selector(viewTapped)
         addSubview(viewBtn)
 

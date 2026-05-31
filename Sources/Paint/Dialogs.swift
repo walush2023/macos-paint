@@ -36,7 +36,7 @@ private final class ColorPanelObserver: NSObject {
 enum ResizeDialog {
     static func run(in parent: NSWindow, currentSize: NSSize, completion: @escaping (NSSize?) -> Void) {
         let alert = NSAlert()
-        alert.messageText = "重新調整大小"
+        alert.messageText = tr("重新調整大小")
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -52,24 +52,24 @@ enum ResizeDialog {
         let wRow = NSStackView()
         wRow.orientation = .horizontal
         wRow.spacing = 6
-        wRow.addArrangedSubview(NSTextField(labelWithString: "寬度 (像素):"))
+        wRow.addArrangedSubview(NSTextField(labelWithString: tr("寬度 (像素):")))
         wRow.addArrangedSubview(wFld)
         stack.addArrangedSubview(wRow)
 
         let hRow = NSStackView()
         hRow.orientation = .horizontal
         hRow.spacing = 6
-        hRow.addArrangedSubview(NSTextField(labelWithString: "高度 (像素):"))
+        hRow.addArrangedSubview(NSTextField(labelWithString: tr("高度 (像素):")))
         hRow.addArrangedSubview(hFld)
         stack.addArrangedSubview(hRow)
 
-        let aspect = NSButton(checkboxWithTitle: "維持外觀比例", target: nil, action: nil)
+        let aspect = NSButton(checkboxWithTitle: tr("維持外觀比例"), target: nil, action: nil)
         aspect.state = .on
         stack.addArrangedSubview(aspect)
 
         alert.accessoryView = stack
-        alert.addButton(withTitle: "確定")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: tr("確定"))
+        alert.addButton(withTitle: tr("取消"))
 
         alert.beginSheetModal(for: parent) { resp in
             if resp == .alertFirstButtonReturn {

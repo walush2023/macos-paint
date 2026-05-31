@@ -38,6 +38,7 @@ enum UnitTests {
             ("undoAcrossRotate",   testUndoAcrossRotate),
             ("resizeKeepsContent", testResizeKeepsContent),
             ("canvasResizeDrag",   testCanvasResizeDragUsesBase),
+            ("localization",       testLocalization),
         ]
         for (_, fn) in tests { fn() }
 
@@ -653,6 +654,43 @@ enum UnitTests {
         // 一次拖拉只產生一個歷史步驟：undo 回到 60 寬
         cv.undo()
         assertEq("resizeDrag.undo.w", cv.bitmap.pixelsWide, 60)
+    }
+
+    static func testLocalization() {
+        let saved = L10n.override
+        defer { L10n.override = saved }
+        // 繁中：回傳原文
+        L10n.override = .zhHant
+        assertTrue("l10n.hant.paste", L10n.tr("貼上") == "貼上")
+        // 英文
+        L10n.override = .en
+        assertTrue("l10n.en.paste", L10n.tr("貼上") == "Paste")
+        assertTrue("l10n.en.file", L10n.tr("檔案") == "File")
+        assertTrue("l10n.en.colors", L10n.tr("色彩") == "Colors")
+        // 未涵蓋字串 → 回退原文
+        assertTrue("l10n.en.fallback", L10n.tr("不存在於表中的字串") == "不存在於表中的字串")
+        // 日文 / 簡中
+        L10n.override = .ja
+        assertTrue("l10n.ja.tools", L10n.tr("工具") == "ツール")
+        L10n.override = .zhHans
+        assertTrue("l10n.hans.colors", L10n.tr("色彩") == "颜色")
+        // 格式字串
+        L10n.override = .en
+        assertTrue("l10n.format", L10n.trf("您要儲存對 %@ 的變更嗎？", "a.png") == "Do you want to save changes to a.png?")
+        // 語言偵測對應
+        assertTrue("l10n.detect.tw", langForPref("zh-Hant-TW") == .zhHant)
+        assertTrue("l10n.detect.cn", langForPref("zh-Hans-CN") == .zhHans)
+        assertTrue("l10n.detect.en", langForPref("en-US") == .en)
+        assertTrue("l10n.detect.ja", langForPref("ja-JP") == .ja)
+        assertTrue("l10n.detect.other", langForPref("fr-FR") == .en)
+    }
+    // 重現 L10n.detect 的對應邏輯（detect 讀系統，無法注入；此處驗證規則）
+    private static func langForPref(_ pref: String) -> L10n.Lang {
+        let p = pref.lowercased()
+        if p.hasPrefix("zh-hant") || p.hasPrefix("zh-tw") || p.hasPrefix("zh-hk") || p.hasPrefix("zh-mo") { return .zhHant }
+        if p.hasPrefix("zh") { return .zhHans }
+        if p.hasPrefix("ja") { return .ja }
+        return .en
     }
 
     static func testPaletteContainsExpectedColors() {

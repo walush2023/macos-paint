@@ -27,7 +27,7 @@ final class MainWindowController: NSWindowController {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
-        win.title = "未命名 - 小畫家"
+        win.title = "\(tr("未命名")) - \(tr("小畫家"))"
         win.minSize = NSSize(width: 800, height: 500)
         // 強制使用淺色外觀以對齊 Windows 小畫家視覺、避免深色模式下標籤變白看不清
         win.appearance = NSAppearance(named: .aqua)
@@ -154,14 +154,14 @@ final class MainWindowController: NSWindowController {
     private func showFileMenu() {
         guard let win = window else { return }
         let menu = NSMenu()
-        menu.addItem(makeFileItem("新增",  Selector(("newDocument:"))))
-        menu.addItem(makeFileItem("開啟…", Selector(("openDocument:"))))
-        menu.addItem(makeFileItem("儲存",  Selector(("saveDocument:"))))
-        menu.addItem(makeFileItem("另存新檔…", Selector(("saveAsDocument:"))))
+        menu.addItem(makeFileItem(tr("新增"),  Selector(("newDocument:"))))
+        menu.addItem(makeFileItem(tr("開啟…"), Selector(("openDocument:"))))
+        menu.addItem(makeFileItem(tr("儲存"),  Selector(("saveDocument:"))))
+        menu.addItem(makeFileItem(tr("另存新檔…"), Selector(("saveAsDocument:"))))
         menu.addItem(.separator())
-        menu.addItem(makeFileItem("列印…", Selector(("printDocument:"))))
+        menu.addItem(makeFileItem(tr("列印…"), Selector(("printDocument:"))))
         menu.addItem(.separator())
-        menu.addItem(makeFileItem("內容…", Selector(("showProperties:"))))
+        menu.addItem(makeFileItem(tr("內容…"), Selector(("showProperties:"))))
         let appOrigin = tabBar.fileButtonOrigin
         let p = tabBar.convert(NSPoint(x: appOrigin.x, y: 0), to: nil)
         let screenPt = win.convertPoint(toScreen: p)
@@ -174,8 +174,8 @@ final class MainWindowController: NSWindowController {
     }
 
     private func updateTitle() {
-        let base = currentFileURL?.lastPathComponent ?? "未命名"
-        window?.title = "\(base)\(isDirty ? " *" : "") - 小畫家"
+        let base = currentFileURL?.lastPathComponent ?? tr("未命名")
+        window?.title = "\(base)\(isDirty ? " *" : "") - \(tr("小畫家"))"
     }
 
     private let canvasMargin: CGFloat = 10
@@ -263,7 +263,7 @@ final class MainWindowController: NSWindowController {
 
     @objc func saveAsDocument(_ sender: Any?) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? "未命名.png"
+        panel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? tr("未命名.png")
         if #available(macOS 11.0, *) {
             panel.allowedContentTypes = [.png, .jpeg, .bmp, .gif, .tiff]
         } else {
@@ -305,9 +305,9 @@ final class MainWindowController: NSWindowController {
         guard let win = window else { return }
         let s = PaintState.shared.canvasSize
         let alert = NSAlert()
-        alert.messageText = "影像內容"
-        alert.informativeText = "寬度: \(Int(s.width)) 像素\n高度: \(Int(s.height)) 像素\n解析度: 96 DPI"
-        alert.addButton(withTitle: "確定")
+        alert.messageText = tr("影像內容")
+        alert.informativeText = trf("寬度: %d 像素\n高度: %d 像素\n解析度: 96 DPI", Int(s.width), Int(s.height))
+        alert.addButton(withTitle: tr("確定"))
         alert.beginSheetModal(for: win, completionHandler: nil)
     }
 
@@ -406,10 +406,10 @@ final class MainWindowController: NSWindowController {
     private func confirmDiscardIfNeeded(_ completion: @escaping (Bool) -> Void) {
         guard isDirty, let win = window else { completion(true); return }
         let alert = NSAlert()
-        alert.messageText = "您要儲存對\(currentFileURL?.lastPathComponent ?? "未命名")的變更嗎？"
-        alert.addButton(withTitle: "儲存")
-        alert.addButton(withTitle: "不要儲存")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = trf("您要儲存對 %@ 的變更嗎？", currentFileURL?.lastPathComponent ?? tr("未命名"))
+        alert.addButton(withTitle: tr("儲存"))
+        alert.addButton(withTitle: tr("不要儲存"))
+        alert.addButton(withTitle: tr("取消"))
         alert.beginSheetModal(for: win) { [weak self] response in
             switch response {
             case .alertFirstButtonReturn:
