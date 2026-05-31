@@ -39,6 +39,10 @@ enum UnitTests {
             ("resizeKeepsContent", testResizeKeepsContent),
             ("canvasResizeDrag",   testCanvasResizeDragUsesBase),
             ("localization",       testLocalization),
+            ("escCommits",         testEscCommitsSelection),
+            ("toolSwitchCommits",  testToolSwitchCommitsSelection),
+            ("newClearsFloating",  testNewClearsFloating),
+            ("undoRemovesFloat",   testUndoRemovesFloatingInsert),
         ]
         for (_, fn) in tests { fn() }
 
@@ -691,6 +695,67 @@ enum UnitTests {
         if p.hasPrefix("zh") { return .zhHans }
         if p.hasPrefix("ja") { return .ja }
         return .en
+    }
+
+    /// 建一張純色 NSImage。
+    private static func solidImage(_ w: Int, _ h: Int, _ c: NSColor) -> NSImage {
+        let img = NSImage(size: NSSize(width: w, height: h))
+        img.lockFocus(); c.setFill(); NSRect(x: 0, y: 0, width: w, height: h).fill(); img.unlockFocus()
+        return img
+    }
+    private static func greenWithFloatingBlue() -> CanvasView {
+        let cv = makeCanvas(100, 80)
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 0, green: 1, blue: 0, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 100, height: 80).fill()
+        }
+        cv.pushHistory()
+        cv.overlayImage(solidImage(30, 30, NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1)),
+                        at: NSPoint(x: 50, y: 40))
+        return cv
+    }
+
+    static func testEscCommitsSelection() {
+        let cv = greenWithFloatingBlue()
+        assertTrue("esc.floating", cv.selectionImage != nil)
+        cv.cancelOperation(nil)   // ESC
+        assertTrue("esc.committed", cv.selectionImage == nil)
+        assertEq("esc.merged.blue", pixel(of: cv, 50, 40)!.2, 255)
+    }
+
+    static func testToolSwitchCommitsSelection() {
+        let cv = greenWithFloatingBlue()
+        assertTrue("toolswitch.floating", cv.selectionImage != nil)
+        // 切換到鉛筆（非選取工具）→ 透過通知觸發合入
+        PaintState.shared.tool = .pencil
+        NotificationCenter.default.post(name: PaintState.toolChanged, object: nil)
+        assertTrue("toolswitch.committed", cv.selectionImage == nil)
+        assertEq("toolswitch.merged.blue", pixel(of: cv, 50, 40)!.2, 255)
+        // 還原工具
+        PaintState.shared.tool = .pencil
+    }
+
+    static func testNewClearsFloating() {
+        let cv = greenWithFloatingBlue()
+        assertTrue("new.floating", cv.selectionImage != nil)
+        cv.resetCanvas(size: NSSize(width: 800, height: 600))  // 新增文件
+        assertTrue("new.cleared", cv.selectionImage == nil)
+        assertEq("new.size.w", cv.bitmap.pixelsWide, 800)
+        // 新畫布為白、沒有殘留藍圖
+        let p = pixel(of: cv, 400, 300)!
+        assertTrue("new.white", p.0 == 255 && p.1 == 255 && p.2 == 255)
+    }
+
+    static func testUndoRemovesFloatingInsert() {
+        let cv = greenWithFloatingBlue()  // 綠底 + 浮動藍圖（尚未合入）
+        assertTrue("undoFloat.floating", cv.selectionImage != nil)
+        cv.undo()   // 浮動插入圖 → 復原應直接移除它
+        assertTrue("undoFloat.removed", cv.selectionImage == nil)
+        // 底圖維持綠色（不是被多退一步變成空白/其他）
+        let p = pixel(of: cv, 50, 40)!
+        assertEq("undoFloat.base.green", p.1, 255)
+        assertEq("undoFloat.base.notBlue", p.2, 0)
+        assertEq("undoFloat.base.size", cv.bitmap.pixelsWide, 100)
     }
 
     static func testPaletteContainsExpectedColors() {

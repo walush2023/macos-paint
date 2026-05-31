@@ -3,11 +3,29 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var windowController: MainWindowController!
 
+    private var pendingOpenURLs: [URL] = []
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyAppIcon()
         setupMainMenu()
         windowController = MainWindowController()
         windowController.showWindow(nil)
+        // 處理啟動時由 Finder「開啟」帶入的檔案
+        if let url = pendingOpenURLs.first {
+            windowController.openImageFile(url)
+            pendingOpenURLs.removeAll()
+        }
+    }
+
+    /// Finder 雙擊圖檔 / 右鍵「打開檔案的應用程式」/ 拖到 Dock 圖標。
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: { NSImage(contentsOf: $0) != nil }) ?? urls.first else { return }
+        if let wc = windowController {
+            wc.openImageFile(url)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            pendingOpenURLs = [url]   // 啟動尚未完成 → 暫存待 didFinishLaunching 處理
+        }
     }
 
     /// 設定 Dock 圖標：優先用 bundle 內 AppIcon.icns，否則找執行檔旁的 icon.png。

@@ -244,12 +244,21 @@ final class MainWindowController: NSWindowController {
             } else {
                 panel.allowedFileTypes = ["png", "jpg", "jpeg", "bmp", "gif", "tiff"]
             }
-            if panel.runModal() == .OK, let url = panel.url, let img = NSImage(contentsOf: url) {
-                self.canvas.loadImage(img)
-                self.currentFileURL = url
-                self.isDirty = false
-                self.updateTitle()
+            if panel.runModal() == .OK, let url = panel.url {
+                self.openImageFile(url)
             }
+        }
+    }
+
+    /// 由 Finder 開檔 / 開啟方式 / 拖到 Dock，載入指定圖檔。
+    func openImageFile(_ url: URL) {
+        confirmDiscardIfNeeded { [weak self] proceed in
+            guard let self = self, proceed, let img = NSImage(contentsOf: url) else { return }
+            self.canvas.loadImage(img)
+            self.currentFileURL = url
+            self.isDirty = false
+            self.updateTitle()
+            self.layoutDocument()
         }
     }
 
@@ -261,31 +270,74 @@ final class MainWindowController: NSWindowController {
         }
     }
 
+    private struct SaveFormat {
+        let name: String
+        let type: NSBitmapImageRep.FileType
+        let ut: UTType
+        let ext: String
+    }
+    private let saveFormats: [SaveFormat] = [
+        SaveFormat(name: "PNG",  type: .png,  ut: .png,  ext: "png"),
+        SaveFormat(name: "JPEG", type: .jpeg, ut: .jpeg, ext: "jpg"),
+        SaveFormat(name: "BMP",  type: .bmp,  ut: .bmp,  ext: "bmp"),
+        SaveFormat(name: "GIF",  type: .gif,  ut: .gif,  ext: "gif"),
+        SaveFormat(name: "TIFF", type: .tiff, ut: .tiff, ext: "tiff"),
+    ]
+
     @objc func saveAsDocument(_ sender: Any?) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? tr("未命名.png")
-        if #available(macOS 11.0, *) {
-            panel.allowedContentTypes = [.png, .jpeg, .bmp, .gif, .tiff]
-        } else {
-            panel.allowedFileTypes = ["png", "jpg", "jpeg", "bmp", "gif", "tiff"]
+
+        // 起始格式：沿用現有副檔名，否則 PNG
+        let curExt = currentFileURL?.pathExtension.lowercased() ?? "png"
+        let startIdx = saveFormats.firstIndex { $0.ext == curExt || ($0.ext == "jpg" && curExt == "jpeg") } ?? 0
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 170, height: 25))
+        saveFormats.forEach { popup.addItem(withTitle: $0.name) }
+        popup.selectItem(at: startIdx)
+
+        let acc = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 40))
+        let label = NSTextField(labelWithString: tr("檔案格式:"))
+        label.frame = NSRect(x: 14, y: 9, width: 100, height: 20)
+        label.alignment = .right
+        popup.frame = NSRect(x: 120, y: 6, width: 170, height: 25)
+        acc.addSubview(label); acc.addSubview(popup)
+        panel.accessoryView = acc
+
+        let baseName = currentFileURL?.deletingPathExtension().lastPathComponent ?? tr("未命名")
+        let applyFormat: () -> Void = { [weak panel] in
+            guard let panel = panel else { return }
+            let f = self.saveFormats[popup.indexOfSelectedItem]
+            if #available(macOS 11.0, *) { panel.allowedContentTypes = [f.ut] }
+            else { panel.allowedFileTypes = [f.ext] }
+            panel.nameFieldStringValue = "\(baseName).\(f.ext)"
         }
+        let handler = SavePanelFormatHandler(action: applyFormat)
+        popup.target = handler
+        popup.action = #selector(SavePanelFormatHandler.changed(_:))
+        applyFormat()
+
         if panel.runModal() == .OK, let url = panel.url {
-            saveTo(url: url)
+            let f = saveFormats[popup.indexOfSelectedItem]
+            saveTo(url: url, type: f.type)
             currentFileURL = url
             isDirty = false
             updateTitle()
         }
+        _ = handler   // 保活至 modal 結束
     }
 
-    private func saveTo(url: URL) {
-        let ext = url.pathExtension.lowercased()
+    private func saveTo(url: URL, type explicitType: NSBitmapImageRep.FileType? = nil) {
         let type: NSBitmapImageRep.FileType
-        switch ext {
-        case "jpg", "jpeg": type = .jpeg
-        case "bmp":         type = .bmp
-        case "gif":         type = .gif
-        case "tiff":        type = .tiff
-        default:            type = .png
+        if let t = explicitType {
+            type = t
+        } else {
+            switch url.pathExtension.lowercased() {
+            case "jpg", "jpeg": type = .jpeg
+            case "bmp":         type = .bmp
+            case "gif":         type = .gif
+            case "tiff":        type = .tiff
+            default:            type = .png
+            }
         }
         if let data = canvas.exportData(fileType: type) {
             try? data.write(to: url)
@@ -588,4 +640,12 @@ final class CanvasResizeHandle: NSView {
     override func mouseUp(with event: NSEvent) {
         onEnd?()
     }
+}
+
+// MARK: - 另存格式選單的 target
+
+final class SavePanelFormatHandler: NSObject {
+    private let action: () -> Void
+    init(action: @escaping () -> Void) { self.action = action }
+    @objc func changed(_ sender: Any?) { action() }
 }
