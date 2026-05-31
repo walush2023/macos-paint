@@ -33,6 +33,10 @@ enum UnitTests {
             ("pngPreservesAlpha",  testPNGPreservesAlpha),
             ("loadPreservesAlpha", testLoadPreservesAlpha),
             ("overlayDroppedImage", testOverlayDroppedImage),
+            ("undoAcrossResize",   testUndoAcrossResize),
+            ("undoAcrossOverlay",  testUndoAcrossOverlay),
+            ("undoAcrossRotate",   testUndoAcrossRotate),
+            ("resizeKeepsContent", testResizeKeepsContent),
         ]
         for (_, fn) in tests { fn() }
 
@@ -551,6 +555,83 @@ enum UnitTests {
         assertEq("overlay.committed.center.notGreen", center.1, 0)
         let corner = pixel(of: cv, 3, 3)!
         assertEq("overlay.corner.stillGreen", corner.1, 255)
+    }
+
+    static func testUndoAcrossResize() {
+        // 紅底 → 縮放畫布 → undo 應回到「縮放前的紅底」，而非整個被清空
+        let cv = makeCanvas(60, 40)
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 60, height: 40).fill()
+        }
+        cv.pushHistory()
+        cv.scaleCanvas(toSize: NSSize(width: 120, height: 80))
+        assertEq("undoResize.scaled.w", cv.bitmap.pixelsWide, 120)
+        assertTrue("undoResize.canUndo", cv.canUndo())
+        cv.undo()
+        // 回到縮放前：尺寸 60×40、仍是紅色（不是空白）
+        assertEq("undoResize.back.w", cv.bitmap.pixelsWide, 60)
+        assertEq("undoResize.back.h", cv.bitmap.pixelsHigh, 40)
+        assertEq("undoResize.back.red", pixel(of: cv, 30, 20)!.0, 255)
+        // redo 回到放大後
+        cv.redo()
+        assertEq("undoResize.redo.w", cv.bitmap.pixelsWide, 120)
+    }
+
+    static func testUndoAcrossOverlay() {
+        // 綠底 → 疊上藍圖並合入 → undo 應移除疊圖、保留綠底（不清空）
+        let cv = makeCanvas(100, 80)
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 0, green: 1, blue: 0, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 100, height: 80).fill()
+        }
+        cv.pushHistory()
+        let blue = NSImage(size: NSSize(width: 30, height: 30))
+        blue.lockFocus(); NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1).setFill()
+        NSRect(x: 0, y: 0, width: 30, height: 30).fill(); blue.unlockFocus()
+        cv.overlayImage(blue, at: NSPoint(x: 50, y: 40))
+        cv.commitSelection()
+        assertEq("undoOverlay.committed.blue", pixel(of: cv, 50, 40)!.2, 255)
+        cv.undo()
+        // 疊圖被移除：中央恢復綠色，畫布尺寸不變
+        assertEq("undoOverlay.back.size", cv.bitmap.pixelsWide, 100)
+        assertEq("undoOverlay.back.green", pixel(of: cv, 50, 40)!.1, 255)
+        assertEq("undoOverlay.back.notBlue", pixel(of: cv, 50, 40)!.2, 0)
+    }
+
+    static func testUndoAcrossRotate() {
+        let cv = makeCanvas(80, 40)
+        cv.drawInBitmap { _ in
+            NSColor.black.setFill(); NSRect(x: 5, y: 5, width: 10, height: 10).fill()
+        }
+        cv.pushHistory()
+        cv.rotateCanvas(byDegrees: 90)
+        assertEq("undoRotate.rotated.w", cv.bitmap.pixelsWide, 40)
+        cv.undo()
+        assertEq("undoRotate.back.w", cv.bitmap.pixelsWide, 80)
+        assertEq("undoRotate.back.h", cv.bitmap.pixelsHigh, 40)
+        assertEq("undoRotate.back.dot", pixel(of: cv, 8, 8)!.0, 0)
+    }
+
+    static func testResizeKeepsContent() {
+        // 內容不縮放：放大畫布後，原內容仍在左上、新增區域為白
+        let cv = makeCanvas(60, 40)
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 60, height: 40).fill()  // 全紅
+        }
+        cv.pushHistory()
+        cv.resizeCanvasKeepingContent(to: NSSize(width: 100, height: 80))
+        assertEq("resizeKeep.w", cv.bitmap.pixelsWide, 100)
+        assertEq("resizeKeep.h", cv.bitmap.pixelsHigh, 80)
+        // 左上角（視覺 (5, 75)）原內容區 → 紅
+        assertEq("resizeKeep.topleft.red", pixel(of: cv, 5, 75)!.0, 255)
+        // 新增的右下白區（視覺 (90, 5)）→ 白
+        let w = pixel(of: cv, 90, 5)!
+        assertTrue("resizeKeep.newarea.white", w.0 == 255 && w.1 == 255 && w.2 == 255)
+        // undo 還原
+        cv.undo()
+        assertEq("resizeKeep.undo.w", cv.bitmap.pixelsWide, 60)
     }
 
     static func testPaletteContainsExpectedColors() {

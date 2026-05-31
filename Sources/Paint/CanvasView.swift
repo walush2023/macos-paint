@@ -121,11 +121,12 @@ final class CanvasView: NSView {
 
     // MARK: - Canvas management
 
-    func resetCanvas(size: NSSize, fill: NSColor = .white) {
+    /// 建立指定尺寸、指定底色的空白點陣圖。
+    private func makeBlankRep(size: NSSize, fill: NSColor) -> NSBitmapImageRep? {
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
-            pixelsWide: Int(size.width),
-            pixelsHigh: Int(size.height),
+            pixelsWide: max(1, Int(size.width.rounded())),
+            pixelsHigh: max(1, Int(size.height.rounded())),
             bitsPerSample: 8,
             samplesPerPixel: 4,
             hasAlpha: true,
@@ -133,22 +134,35 @@ final class CanvasView: NSView {
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
             bitsPerPixel: 0
-        ) else { return }
-        bitmap = rep
+        ) else { return nil }
         NSGraphicsContext.saveGraphicsState()
         if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
             NSGraphicsContext.current = ctx
             fill.setFill()
-            NSRect(origin: .zero, size: size).fill()
+            NSRect(x: 0, y: 0, width: rep.pixelsWide, height: rep.pixelsHigh).fill()
             ctx.flushGraphics()
         }
         NSGraphicsContext.restoreGraphicsState()
+        return rep
+    }
+
+    /// 安裝新的點陣圖為畫布內容，並同步畫面尺寸 / 狀態。
+    /// `resetHistory` 為 true 時才清空復原歷史（僅「新增文件」用）。
+    private func installBitmap(_ rep: NSBitmapImageRep, resetHistory: Bool) {
+        bitmap = rep
+        let size = NSSize(width: rep.pixelsWide, height: rep.pixelsHigh)
         setFrameSize(size)
-        history.reset(initial: copyBitmap(rep))
-        clearOverlay()
-        needsDisplay = true
         PaintState.shared.canvasSize = size
+        clearOverlay()
+        if resetHistory { history.reset(initial: copyBitmap(rep)) }
+        needsDisplay = true
         NotificationCenter.default.post(name: PaintState.canvasResized, object: nil)
+    }
+
+    /// 新增空白文件：建立空白畫布並清空歷史。
+    func resetCanvas(size: NSSize, fill: NSColor = .white) {
+        guard let rep = makeBlankRep(size: size, fill: fill) else { return }
+        installBitmap(rep, resetHistory: true)
     }
 
     private func copyBitmap(_ src: NSBitmapImageRep) -> NSBitmapImageRep {
@@ -178,20 +192,27 @@ final class CanvasView: NSView {
         history.push(copyBitmap(bitmap))
     }
 
+    /// 丟棄目前的浮動選取（不合入底圖）。
+    private func discardSelection() {
+        selectionImage = nil
+        selectionRect = nil
+        selectionPath = nil
+        resizingHandle = nil
+        movingSelection = false
+    }
+
     func undo() {
-        if let snap = history.undo() {
-            commitSelectionWithoutHistory()
-            bitmap = copyBitmap(snap)
-            needsDisplay = true
-        }
+        guard let snap = history.undo() else { return }
+        discardSelection()
+        installBitmap(copyBitmap(snap), resetHistory: false)
     }
     func redo() {
-        if let snap = history.redo() {
-            commitSelectionWithoutHistory()
-            bitmap = copyBitmap(snap)
-            needsDisplay = true
-        }
+        guard let snap = history.redo() else { return }
+        discardSelection()
+        installBitmap(copyBitmap(snap), resetHistory: false)
     }
+    func canUndo() -> Bool { history.canUndo() }
+    func canRedo() -> Bool { history.canRedo() }
 
     // MARK: - Loading / saving images
 
@@ -205,12 +226,14 @@ final class CanvasView: NSView {
         }
         let size = NSSize(width: max(1, pxW), height: max(1, pxH))
         // 以「透明」為底，並用 .copy 原樣搬入像素 → 保留來源圖片的 alpha。
-        resetCanvas(size: size, fill: .clear)
+        guard let rep = makeBlankRep(size: size, fill: .clear) else { return }
+        installBitmap(rep, resetHistory: false)
         drawInBitmap { ctx in
             ctx.compositingOperation = .copy
             image.draw(in: NSRect(origin: .zero, size: size),
                        from: .zero, operation: .copy, fraction: 1.0)
         }
+        // 開啟檔案 = 新文件：以載入後的影像作為歷史起點（undo 不會清空成空白）
         history.reset(initial: copyBitmap(bitmap))
         needsDisplay = true
     }
@@ -222,12 +245,36 @@ final class CanvasView: NSView {
 
     func scaleCanvas(toSize newSize: NSSize) {
         commitSelection()
-        let old = bitmap!
-        let oldImage = NSImage(size: NSSize(width: old.pixelsWide, height: old.pixelsHigh))
-        oldImage.addRepresentation(old)
-        resetCanvas(size: newSize, fill: .white)
+        let oldImage = currentBitmapImage()
+        guard let rep = makeBlankRep(size: newSize, fill: .white) else { return }
+        installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
             oldImage.draw(in: NSRect(origin: .zero, size: newSize))
+        }
+        pushHistory()
+    }
+
+    /// 把目前底圖包成 NSImage（不含浮動選取）。
+    private func currentBitmapImage() -> NSImage {
+        let img = NSImage(size: NSSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh))
+        img.addRepresentation(copyBitmap(bitmap))
+        return img
+    }
+
+    /// 變更畫布尺寸但**不縮放內容**（延伸時補白底、縮小時裁切），內容左上對齊。
+    /// 供畫布邊角拖拉調整大小使用。
+    func resizeCanvasKeepingContent(to newSize: NSSize) {
+        commitSelection()
+        let w = max(1, newSize.width.rounded()), h = max(1, newSize.height.rounded())
+        let target = NSSize(width: w, height: h)
+        let oldImage = currentBitmapImage()
+        let oldH = CGFloat(bitmap.pixelsHigh)
+        guard let rep = makeBlankRep(size: target, fill: .white) else { return }
+        installBitmap(rep, resetHistory: false)
+        drawInBitmap { _ in
+            // 內容左上對齊：底圖原尺寸畫在新畫布頂端（左下原點 → y 偏移 = 新高 - 舊高）
+            let origin = NSPoint(x: 0, y: h - oldH)
+            oldImage.draw(at: origin, from: .zero, operation: .sourceOver, fraction: 1.0)
         }
         pushHistory()
     }
@@ -1007,17 +1054,6 @@ final class CanvasView: NSView {
             needsDisplay = true
         }
     }
-    private func commitSelectionWithoutHistory() {
-        if let img = selectionImage, let r = selectionRect {
-            drawInBitmap { _ in
-                img.draw(in: r)
-            }
-        }
-        selectionImage = nil
-        selectionRect = nil
-        selectionPath = nil
-    }
-
     func selectAll() {
         commitSelection()
         PaintState.shared.tool = .selectRect
@@ -1112,7 +1148,8 @@ final class CanvasView: NSView {
         }()
         selectionImage = nil
         selectionRect = nil
-        resetCanvas(size: r.size, fill: .white)
+        guard let rep = makeBlankRep(size: r.size, fill: .white) else { return }
+        installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
             img.draw(in: NSRect(origin: .zero, size: r.size))
         }
@@ -1129,10 +1166,9 @@ final class CanvasView: NSView {
         } else {
             newSize = NSSize(width: s.height, height: s.width)
         }
-        let old = bitmap!
-        let oldImage = NSImage(size: s)
-        oldImage.addRepresentation(old)
-        resetCanvas(size: newSize, fill: .white)
+        let oldImage = currentBitmapImage()
+        guard let rep = makeBlankRep(size: newSize, fill: .white) else { return }
+        installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
             let tx = NSAffineTransform()
             tx.translateX(by: newSize.width / 2, yBy: newSize.height / 2)
@@ -1147,10 +1183,9 @@ final class CanvasView: NSView {
     func flipCanvas(horizontal: Bool) {
         commitSelection()
         let s = bounds.size
-        let old = bitmap!
-        let oldImage = NSImage(size: s)
-        oldImage.addRepresentation(old)
-        resetCanvas(size: s, fill: .white)
+        let oldImage = currentBitmapImage()
+        guard let rep = makeBlankRep(size: s, fill: .white) else { return }
+        installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
             let tx = NSAffineTransform()
             if horizontal {
