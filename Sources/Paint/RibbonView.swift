@@ -20,6 +20,14 @@ final class RibbonView: NSView {
     private var currentTab: Tab = .home
     enum Tab { case home, view }
 
+    // MARK: - Layout constants (統一對齊用)
+    private let topPad: CGFloat = 6      // 內容區上緣
+    private let bandH: CGFloat  = 72     // 內容區高度 (大按鈕高度)
+    private var labelY: CGFloat { topPad + bandH + 4 }   // 群組標籤 y (=82)
+    private var bandBottom: CGFloat { topPad + bandH }   // 內容區下緣 (=78)
+    /// 在內容帶中，把高度 h 的元件垂直置中時的頂端 y。
+    private func centeredY(_ h: CGFloat) -> CGFloat { topPad + (bandH - h) / 2 }
+
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 110))
         wantsLayer = true
@@ -87,33 +95,35 @@ final class RibbonView: NSView {
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoomIn(_:)), with: nil)
         }
         addSubview(zoomIn)
-        let zoomOut = makeBigButton(title: "縮小", icon: "🔍−", x: x + 56) { [weak self] _ in
+        let zoomOut = makeBigButton(title: "縮小", icon: "🔍−", x: x + 58) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoomOut(_:)), with: nil)
         }
         addSubview(zoomOut)
-        let zoom100 = makeBigButton(title: "100%", icon: "💯", x: x + 112) { [weak self] _ in
+        let zoom100 = makeBigButton(title: "100%", icon: "💯", x: x + 116) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoom100(_:)), with: nil)
         }
         addSubview(zoom100)
         addGroupLabel("縮放", x: x, w: 170)
-        return x + 174
+        return x + 174 + 4
     }
 
     private func buildShowHideGroup(x: CGFloat) -> CGFloat {
+        let rowH: CGFloat = 24
+        let topY = centeredY(rowH * 3)
         let rulers = NSButton(checkboxWithTitle: "尺規", target: self, action: #selector(toggleRulersBox(_:)))
         rulers.state = PaintState.shared.showRulers ? .on : .off
-        rulers.frame = NSRect(x: x, y: 60, width: 100, height: 22)
+        rulers.frame = NSRect(x: x, y: topY, width: 110, height: 22)
         addSubview(rulers)
         let grid = NSButton(checkboxWithTitle: "格線", target: self, action: #selector(toggleGridBox(_:)))
         grid.state = PaintState.shared.showGridlines ? .on : .off
-        grid.frame = NSRect(x: x, y: 36, width: 100, height: 22)
+        grid.frame = NSRect(x: x, y: topY + rowH, width: 110, height: 22)
         addSubview(grid)
         let status = NSButton(checkboxWithTitle: "狀態列", target: self, action: #selector(toggleStatusBox(_:)))
         status.state = PaintState.shared.showStatusBar ? .on : .off
-        status.frame = NSRect(x: x, y: 12, width: 100, height: 22)
+        status.frame = NSRect(x: x, y: topY + rowH * 2, width: 110, height: 22)
         addSubview(status)
-        addGroupLabel("顯示或隱藏", x: x, w: 100)
-        return x + 110
+        addGroupLabel("顯示或隱藏", x: x, w: 110)
+        return x + 114
     }
 
     private func buildDisplayGroup(x: CGFloat) -> CGFloat {
@@ -121,8 +131,8 @@ final class RibbonView: NSView {
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.toggleFullScreen(_:)), with: nil)
         }
         addSubview(fs)
-        addGroupLabel("顯示", x: x, w: 56)
-        return x + 60
+        addGroupLabel("顯示", x: x, w: 54)
+        return x + 58
     }
 
     @objc private func toggleRulersBox(_ sender: NSButton) {
@@ -140,64 +150,69 @@ final class RibbonView: NSView {
 
     @discardableResult
     private func drawSeparator(x: CGFloat) -> CGFloat {
-        let v = NSBox(frame: NSRect(x: x, y: 4, width: 1, height: 92))
+        let v = NSBox(frame: NSRect(x: x, y: topPad, width: 1, height: bandH + 4))
         v.boxType = .separator
         addSubview(v)
-        return x + 6
+        return x + 8
     }
 
     // MARK: - Groups
 
     private func buildClipboardGroup(x: CGFloat) -> CGFloat {
+        let startX = x
         var x = x
         let paste = makeBigButton(title: "貼上", icon: "📋", x: x) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(Selector("paste:"), with: nil)
         }
         addSubview(paste)
-        x += 56
-        let cut = makeSmallButton(title: "剪下", icon: "✂", y: 4) { [weak self] _ in
+        x += 58
+        // 剪下 / 複製：兩列垂直置中
+        let rowH: CGFloat = 24, smallW: CGFloat = 70
+        let topY = centeredY(rowH * 2)
+        let cut = makeSmallButton(title: "剪下", icon: "✂", y: topY, width: smallW) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(Selector("cut:"), with: nil)
         }
-        cut.frame.origin.x = x
-        addSubview(cut)
-        let copy = makeSmallButton(title: "複製", icon: "📑", y: 28) { [weak self] _ in
+        cut.frame.origin.x = x; addSubview(cut)
+        let copy = makeSmallButton(title: "複製", icon: "📑", y: topY + rowH, width: smallW) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(Selector("copy:"), with: nil)
         }
-        copy.frame.origin.x = x
-        addSubview(copy)
-        addGroupLabel("剪貼簿", x: x - 56, w: 120)
-        return x + 70
+        copy.frame.origin.x = x; addSubview(copy)
+        x += smallW
+        addGroupLabel("剪貼簿", x: startX, w: x - startX)
+        return x + 4
     }
 
     private func buildImageGroup(x: CGFloat) -> CGFloat {
+        let startX = x
         var x = x
-        // Select dropdown big button
         let sel = makeBigButton(title: "選取 ▾", icon: "▭", x: x) { [weak self] sender in
             self?.showSelectMenu(from: sender)
         }
         toolButtons[.selectRect] = sel
         toolButtons[.selectFree] = sel
         addSubview(sel)
-        x += 56
+        x += 58
 
-        let crop = makeSmallButton(title: "裁剪", icon: "✂", y: 4) { [weak self] _ in
+        // 裁剪 / 重新調整大小 / 旋轉：三列垂直置中
+        let rowH: CGFloat = 24, smallW: CGFloat = 124
+        let topY = centeredY(rowH * 3)
+        let crop = makeSmallButton(title: "裁剪", icon: "✂", y: topY, width: smallW) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.cropImage(_:)), with: nil)
         }; crop.frame.origin.x = x; addSubview(crop)
-
-        let resize = makeSmallButton(title: "重新調整大小", icon: "⤢", y: 28) { [weak self] _ in
+        let resize = makeSmallButton(title: "重新調整大小", icon: "⤢", y: topY + rowH, width: smallW) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.resizeImage(_:)), with: nil)
         }; resize.frame.origin.x = x; addSubview(resize)
-
-        let rotate = makeSmallButton(title: "旋轉 ▾", icon: "⟳", y: 52) { [weak self] sender in
+        let rotate = makeSmallButton(title: "旋轉 ▾", icon: "⟳", y: topY + rowH * 2, width: smallW) { [weak self] sender in
             self?.showRotateMenu(from: sender)
         }; rotate.frame.origin.x = x; addSubview(rotate)
+        x += smallW
 
-        addGroupLabel("影像", x: x - 56, w: 200)
-        return x + 130
+        addGroupLabel("影像", x: startX, w: x - startX)
+        return x + 4
     }
 
     private func buildToolsGroup(x: CGFloat) -> CGFloat {
-        // 3 cols x 2 rows of small tool buttons
+        // 3 cols x 2 rows，整組垂直/水平置中
         let icons: [(Tool, String, String)] = [
             (.pencil,    "鉛筆", "✏️"),
             (.fill,      "以色彩填滿", "🪣"),
@@ -206,16 +221,24 @@ final class RibbonView: NSView {
             (.picker,    "色彩選擇工具", "💧"),
             (.magnifier, "放大鏡", "🔍"),
         ]
+        let cell: CGFloat = 28, btnSize: CGFloat = 26
+        let gridW = cell * 3
+        let gridH = cell * 2
         let gridX = x
+        let topY = centeredY(gridH)
         for (i, info) in icons.enumerated() {
             let col = i % 3, row = i / 3
             let btn = makeToolButton(icon: info.2, tooltip: info.1, tool: info.0)
-            btn.frame = NSRect(x: gridX + CGFloat(col) * 28, y: 6 + CGFloat(row) * 28, width: 26, height: 26)
+            btn.frame = NSRect(
+                x: gridX + CGFloat(col) * cell + (cell - btnSize) / 2,
+                y: topY + CGFloat(row) * cell + (cell - btnSize) / 2,
+                width: btnSize, height: btnSize
+            )
             addSubview(btn)
             toolButtons[info.0] = btn
         }
-        addGroupLabel("工具", x: gridX, w: 90)
-        return gridX + 86
+        addGroupLabel("工具", x: gridX, w: gridW)
+        return gridX + gridW + 4
     }
 
     private func buildBrushesGroup(x: CGFloat) -> CGFloat {
@@ -223,8 +246,8 @@ final class RibbonView: NSView {
             self?.showBrushMenu(from: sender)
         }
         addSubview(big)
-        addGroupLabel("筆刷", x: x, w: 56)
-        return x + 60
+        addGroupLabel("筆刷", x: x, w: 54)
+        return x + 58
     }
 
     private func buildShapesGroup(x: CGFloat) -> CGFloat {
@@ -244,13 +267,23 @@ final class RibbonView: NSView {
             (.heart, "愛心", "♥"), (.lightning, "閃電", "⚡"),
         ]
         let cols = 12
+        let shapeCell: CGFloat = 23
+        let gridW = shapeCell * CGFloat(cols)
+        let gridH = shapeCell * 2
+        let dropH: CGFloat = 22
+        // 形狀格 + 兩個下拉，整體垂直置中
+        let blockH = gridH + 4 + dropH
+        let topY = centeredY(blockH)
         for (i, info) in kinds.enumerated() {
             let col = i % cols, row = i / cols
-            let btn = NSButton(frame: NSRect(x: x + CGFloat(col) * 22, y: 4 + CGFloat(row) * 22, width: 22, height: 22))
+            let btn = NSButton(frame: NSRect(
+                x: x + CGFloat(col) * shapeCell,
+                y: topY + CGFloat(row) * shapeCell,
+                width: shapeCell, height: shapeCell))
             btn.bezelStyle = .smallSquare
             btn.isBordered = false
             btn.title = info.2
-            btn.font = NSFont.systemFont(ofSize: 11)
+            btn.font = NSFont.systemFont(ofSize: 12)
             btn.toolTip = info.1
             btn.target = self
             btn.action = #selector(shapeClicked(_:))
@@ -259,23 +292,25 @@ final class RibbonView: NSView {
             shapeButtons[info.0] = btn
         }
 
-        // Outline / Fill dropdowns
-        outlineMenu = NSPopUpButton(frame: NSRect(x: x, y: 50, width: 100, height: 22))
+        // Outline / Fill dropdowns（並排於形狀格下方）
+        let dropY = topY + gridH + 4
+        let dropW = (gridW - 4) / 2
+        outlineMenu = NSPopUpButton(frame: NSRect(x: x, y: dropY, width: dropW, height: dropH))
         outlineMenu.addItem(withTitle: "外框: 純色")
         outlineMenu.addItem(withTitle: "外框: 無外框")
         outlineMenu.target = self
         outlineMenu.action = #selector(outlineChanged(_:))
         addSubview(outlineMenu)
 
-        fillMenu = NSPopUpButton(frame: NSRect(x: x + 104, y: 50, width: 100, height: 22))
+        fillMenu = NSPopUpButton(frame: NSRect(x: x + dropW + 4, y: dropY, width: dropW, height: dropH))
         fillMenu.addItem(withTitle: "填滿: 無填滿")
         fillMenu.addItem(withTitle: "填滿: 純色")
         fillMenu.target = self
         fillMenu.action = #selector(fillChanged(_:))
         addSubview(fillMenu)
 
-        addGroupLabel("圖案", x: x, w: 264)
-        return x + 268
+        addGroupLabel("圖案", x: x, w: gridW)
+        return x + gridW + 4
     }
 
     private func buildSizeGroup(x: CGFloat) -> CGFloat {
@@ -283,32 +318,40 @@ final class RibbonView: NSView {
             self?.showSizeMenu(from: sender)
         }
         addSubview(big)
-        addGroupLabel("大小", x: x, w: 56)
-        return x + 60
+        addGroupLabel("大小", x: x, w: 54)
+        return x + 58
     }
 
     private func buildColorsGroup(x: CGFloat) -> CGFloat {
-        // Color 1 & Color 2 swatches
+        let startX = x
         var x = x
+        // 色彩 1 / 色彩 2 swatches（垂直置中）
+        let swatchH: CGFloat = 60
+        let swatchY = centeredY(swatchH)
         color1Well = ColorSwatchView(label: "色彩 1", color: PaintState.shared.color1, isSecondary: false)
-        color1Well.frame = NSRect(x: x, y: 4, width: 40, height: 60)
+        color1Well.frame = NSRect(x: x, y: swatchY, width: 40, height: swatchH)
         color1Well.onClick = { [weak self] in self?.activateSwatch(secondary: false) }
         addSubview(color1Well)
-        x += 42
+        x += 44
 
         color2Well = ColorSwatchView(label: "色彩 2", color: PaintState.shared.color2, isSecondary: true)
-        color2Well.frame = NSRect(x: x, y: 4, width: 40, height: 60)
+        color2Well.frame = NSRect(x: x, y: swatchY, width: 40, height: swatchH)
         color2Well.onClick = { [weak self] in self?.activateSwatch(secondary: true) }
         addSubview(color2Well)
         x += 50
 
-        // Palette 10x2
-        let cellSize: CGFloat = 16
+        // Palette 10x2（垂直置中）
+        let cellSize: CGFloat = 16, cellGap: CGFloat = 1
         let cols = 10
+        let paletteH = CGFloat(2) * cellSize + cellGap
+        let paletteY = centeredY(paletteH)
         for (i, color) in Palette.standard.enumerated() {
             let col = i % cols, row = i / cols
             let cell = PaletteCellView(color: color)
-            cell.frame = NSRect(x: x + CGFloat(col) * (cellSize + 1), y: 4 + CGFloat(row) * (cellSize + 1), width: cellSize, height: cellSize)
+            cell.frame = NSRect(
+                x: x + CGFloat(col) * (cellSize + cellGap),
+                y: paletteY + CGFloat(row) * (cellSize + cellGap),
+                width: cellSize, height: cellSize)
             cell.onClick = { [weak self] secondary in
                 if secondary { PaintState.shared.color2 = color } else { PaintState.shared.color1 = color }
                 NotificationCenter.default.post(name: PaintState.colorChanged, object: nil)
@@ -316,23 +359,23 @@ final class RibbonView: NSView {
             paletteCells.append(cell)
             addSubview(cell)
         }
-        x += CGFloat(cols) * (cellSize + 1) + 8
+        x += CGFloat(cols) * (cellSize + cellGap) + 10
 
-        // Edit colors big button
+        // 編輯色彩大按鈕
         let editBtn = makeBigButton(title: "編輯色彩", icon: "🎨", x: x) { [weak self] _ in
             self?.openColorPicker()
         }
         addSubview(editBtn)
-        x += 56
+        x += 58
 
-        addGroupLabel("色彩", x: x - 250, w: 250)
-        return x + 6
+        addGroupLabel("色彩", x: startX, w: x - startX)
+        return x + 4
     }
 
     // MARK: - Button factories
 
     private func makeBigButton(title: String, icon: String, x: CGFloat, action: @escaping (NSButton) -> Void) -> NSButton {
-        let btn = ActionButton(frame: NSRect(x: x, y: 4, width: 54, height: 72))
+        let btn = ActionButton(frame: NSRect(x: x, y: topPad, width: 54, height: bandH))
         btn.bezelStyle = .smallSquare
         btn.isBordered = false
         btn.title = ""
@@ -372,8 +415,8 @@ final class RibbonView: NSView {
         return btn
     }
 
-    private func makeSmallButton(title: String, icon: String, y: CGFloat, action: @escaping (NSButton) -> Void) -> NSButton {
-        let btn = ActionButton(frame: NSRect(x: 0, y: y, width: 110, height: 22))
+    private func makeSmallButton(title: String, icon: String, y: CGFloat, width: CGFloat = 110, action: @escaping (NSButton) -> Void) -> NSButton {
+        let btn = ActionButton(frame: NSRect(x: 0, y: y, width: width, height: 22))
         btn.bezelStyle = .smallSquare
         btn.isBordered = false
         btn.alignment = .left
@@ -413,7 +456,7 @@ final class RibbonView: NSView {
         lbl.textColor = NSColor(calibratedWhite: 0.25, alpha: 1)
         lbl.drawsBackground = false
         lbl.isBordered = false
-        lbl.frame = NSRect(x: x, y: 90, width: w, height: 16)
+        lbl.frame = NSRect(x: x, y: labelY, width: w, height: 14)
         addSubview(lbl)
     }
 
