@@ -1,9 +1,10 @@
 import Foundation
 
 /// 多國語言。以繁體中文原字串為 key；依系統語言自動選擇。
-/// 未涵蓋的語言或字串回退為繁體中文原文。
+/// 支援：繁中、簡中、英、日、韓、法、德、西、義、葡；其他語言用英文。
+/// 某語言缺翻譯時回退英文（中文介面回退繁中原文）。
 enum L10n {
-    enum Lang: Hashable { case zhHant, zhHans, en, ja }
+    enum Lang: Hashable, CaseIterable { case zhHant, zhHans, en, ja, ko, fr, de, es, it, pt }
 
     /// 測試/預覽時可強制指定語言（正常執行為 nil → 依系統）。
     static var override: Lang? = nil
@@ -16,12 +17,20 @@ enum L10n {
             || pref.hasPrefix("zh-hk") || pref.hasPrefix("zh-mo") { return .zhHant }
         if pref.hasPrefix("zh") { return .zhHans }       // zh-Hans / zh-CN / zh-SG
         if pref.hasPrefix("ja") { return .ja }
+        if pref.hasPrefix("ko") { return .ko }
+        if pref.hasPrefix("fr") { return .fr }
+        if pref.hasPrefix("de") { return .de }
+        if pref.hasPrefix("es") { return .es }
+        if pref.hasPrefix("it") { return .it }
+        if pref.hasPrefix("pt") { return .pt }
         return .en                                       // 其他 → 英文
     }
 
     static func tr(_ zh: String) -> String {
         if current == .zhHant { return zh }
-        return table[zh]?[current] ?? zh
+        if let s = table[zh]?[current] ?? extra[zh]?[current] { return s }
+        // 缺翻譯：非中文介面先回退英文，再回退原文
+        return current == .zhHans ? zh : (table[zh]?[.en] ?? zh)
     }
 
     /// 帶格式參數（key 內含 %@ / %d 等）。
@@ -32,6 +41,17 @@ enum L10n {
     private static func e(_ en: String, _ hans: String, _ ja: String) -> [Lang: String] {
         [.en: en, .zhHans: hans, .ja: ja]
     }
+
+    /// 韓、法、德、西、義、葡（見 LocalizationExtra.swift）。
+    static func x(_ ko: String, _ fr: String, _ de: String, _ es: String, _ it: String, _ pt: String) -> [Lang: String] {
+        [.ko: ko, .fr: fr, .de: de, .es: es, .it: it, .pt: pt]
+    }
+
+    /// 是否有此語言的翻譯（測試用）。
+    static func has(_ zh: String, _ lang: Lang) -> Bool {
+        lang == .zhHant || table[zh]?[lang] != nil || extra[zh]?[lang] != nil
+    }
+    static var allKeys: [String] { Array(table.keys) }
 
     private static let table: [String: [Lang: String]] = [
         // 新增功能 / 訊息

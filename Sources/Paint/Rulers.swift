@@ -65,7 +65,7 @@ final class CanvasRulerView: NSView {
         let major = CanvasRulerView.majorStep(forZoom: zoom)
         let minor = major >= 10 ? major / 10 : (major >= 5 ? 1 : 0)
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 9),
+            .font: NSFont.systemFont(ofSize: 10),
             .foregroundColor: NSColor(calibratedWhite: 0.25, alpha: 1),
         ]
         NSColor(calibratedWhite: 0.45, alpha: 1).setFill()
@@ -93,7 +93,7 @@ final class CanvasRulerView: NSView {
                 NSRect(x: bounds.width - 1 - tick, y: y, width: tick, height: 1).fill()
                 if isMajor {
                     var small = attrs
-                    small[.font] = NSFont.systemFont(ofSize: v >= 1000 ? 7 : 8)
+                    small[.font] = NSFont.systemFont(ofSize: v >= 1000 ? 8 : 9)
                     ("\(v)" as NSString).draw(at: NSPoint(x: 1, y: y - 11), withAttributes: small)
                 }
             }

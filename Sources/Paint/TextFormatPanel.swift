@@ -69,11 +69,15 @@ final class TextFormatPanel: NSWindowController, NSComboBoxDelegate {
 
         // 顏色
         let cl = NSTextField(labelWithString: tr("色彩"))
-        cl.font = NSFont.systemFont(ofSize: 11); cl.frame = NSRect(x: x, y: y + 3, width: 34, height: 18); x += 36
+        cl.font = NSFont.systemFont(ofSize: 12)
+        let clW = max(34, ceil(cl.intrinsicContentSize.width) + 2)
+        cl.frame = NSRect(x: x, y: y + 3, width: clW, height: 18); x += clW + 2
         content.addSubview(cl)
         colorWell = ColorButton(frame: NSRect(x: x, y: y, width: 28, height: 25))
         colorWell.onClick = { [weak self] in self?.pickColor() }
         content.addSubview(colorWell)
+        // 依實際內容寬度調整面板（各語言標籤長短不一）
+        window?.setContentSize(NSSize(width: max(470, x + 28 + 12), height: 46))
     }
 
     private func toggle(_ title: String, bold: Bool = false, italic: Bool = false, underline: Bool = false) -> NSButton {

@@ -69,6 +69,7 @@ enum UnitTests {
             ("eraserReplace",      testEraserReplace),
             ("textBoxMove",        testTextBoxMove),
             ("textBoxResize",      testTextBoxResize),
+            ("allLanguagesComplete", testAllLanguagesComplete),
         ]
         for (_, fn) in tests { fn() }
 
@@ -1243,5 +1244,26 @@ enum UnitTests {
         for x in 110..<400 { for y in 0..<300 { if pixel(of: cv, x, y)!.0 < 128 { inkRight = true } } }
         assertTrue("textBox.wrappedInside", !inkRight)
         st.tool = oldTool
+    }
+
+    /// 10 種語言：每個字串都有翻譯，格式參數（%@ / %d）數量一致。
+    static func testAllLanguagesComplete() {
+        func specs(_ s: String) -> [String] {
+            let r = try! NSRegularExpression(pattern: "%[@d]")
+            return r.matches(in: s, range: NSRange(s.startIndex..., in: s)).map { (s as NSString).substring(with: $0.range) }
+        }
+        let saved = L10n.override
+        for lang in L10n.Lang.allCases {
+            L10n.override = lang
+            for k in L10n.allKeys {
+                if !L10n.has(k, lang) { failures.append("l10n.missing[\(lang)]: \(k)"); continue }
+                if specs(L10n.tr(k)) != specs(k) { failures.append("l10n.format[\(lang)]: \(k)") }
+            }
+        }
+        L10n.override = .ko
+        assertEq("l10n.ko", L10n.tr("檔案"), "파일")
+        L10n.override = .de
+        assertEq("l10n.de", L10n.tr("另存新檔…"), "Sichern unter …")
+        L10n.override = saved
     }
 }

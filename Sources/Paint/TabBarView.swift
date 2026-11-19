@@ -39,9 +39,14 @@ final class TabBarView: NSView {
     override func layout() {
         super.layout()
         let h = bounds.height
-        fileBtn.frame = NSRect(x: 0, y: 0, width: 64, height: h)
-        homeBtn.frame = NSRect(x: 64, y: 0, width: 80, height: h)
-        viewBtn.frame = NSRect(x: 144, y: 0, width: 64, height: h)
+        // 依各語言標題寬度自動加寬
+        func w(_ b: NSButton, _ minW: CGFloat) -> CGFloat {
+            max(minW, ceil(b.attributedTitle.size().width) + 32)
+        }
+        let fw = w(fileBtn, 64), hw = w(homeBtn, 80), vw = w(viewBtn, 64)
+        fileBtn.frame = NSRect(x: 0, y: 0, width: fw, height: h)
+        homeBtn.frame = NSRect(x: fw, y: 0, width: hw, height: h)
+        viewBtn.frame = NSRect(x: fw + hw, y: 0, width: vw, height: h)
     }
 
     private func makeFileTabBtn(title: String) -> NSButton {
@@ -49,13 +54,13 @@ final class TabBarView: NSView {
         b.bezelStyle = .smallSquare
         b.isBordered = false
         b.title = title
-        b.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        b.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         b.wantsLayer = true
         b.layer?.backgroundColor = NSColor(calibratedRed: 0.176, green: 0.475, blue: 0.788, alpha: 1).cgColor
         b.contentTintColor = .white
         b.attributedTitle = NSAttributedString(
             string: title,
-            attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 12, weight: .medium)]
+            attributes: [.foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 13, weight: .medium)]
         )
         return b
     }
@@ -64,13 +69,13 @@ final class TabBarView: NSView {
         b.bezelStyle = .smallSquare
         b.isBordered = false
         b.title = title
-        b.font = NSFont.systemFont(ofSize: 12)
+        b.font = NSFont.systemFont(ofSize: 13)
         b.wantsLayer = true
         b.attributedTitle = NSAttributedString(
             string: title,
             attributes: [
                 .foregroundColor: NSColor(calibratedRed: 0.078, green: 0.259, blue: 0.545, alpha: 1),
-                .font: NSFont.systemFont(ofSize: 12),
+                .font: NSFont.systemFont(ofSize: 13),
             ]
         )
         return b

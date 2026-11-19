@@ -16,9 +16,9 @@ No web view, no Electron, no external dependencies — just a single native `.ap
 
 **Paint for macOS** brings the classic Windows Paint experience to the Mac. It reproduces the Windows 7/10‑style **Ribbon** interface, the full tool set, the shape library, the color palette, and the editing workflow you remember — implemented from scratch on top of AppKit's `NSView`, `NSBitmapImageRep`, and `NSBezierPath`.
 
-The whole application is roughly **5,000 lines of Swift across 16 files**, with **61 automated tests** and a headless self‑test harness that renders the drawing engine and UI to PNG for visual verification.
+The whole application is roughly **5,000 lines of Swift across 16 files**, with **62 automated tests** and a headless self‑test harness that renders the drawing engine and UI to PNG for visual verification.
 
-> **Localized in 4 languages** — English, Traditional Chinese (繁體中文), Simplified Chinese (简体中文), and Japanese (日本語) — auto-selected from your macOS system language.
+> **Localized in 10 languages** — English, 繁體中文, 简体中文, 日本語, 한국어, Français, Deutsch, Español, Italiano, Português — auto-selected from your macOS system language (other languages fall back to English).
 
 ---
 
@@ -91,7 +91,9 @@ Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right tri
 - Unsaved‑changes confirmation on New / Open / Close (⌘W) / Quit — every edit marks the document modified, and a cancelled or failed save never discards your work; save errors are reported
 
 ### Localization
-- Full UI translated into **English · 繁體中文 · 简体中文 · 日本語**, auto‑selected from the macOS system language (falls back to English).
+- Full UI translated into **English · 繁體中文 · 简体中文 · 日本語 · 한국어 · Français · Deutsch · Español · Italiano · Português**, auto‑selected from the macOS system language (falls back to English); system dialogs (Open/Save, colour panel) follow the same language
+- The ribbon sizes buttons and groups to each language's text, wraps long button labels onto two lines, and scrolls sideways if the window is too narrow — nothing gets cut off
+- Interface text uses macOS‑standard sizes (12–13 pt)
 
 ### Polish
 - Light‑appearance window matching Paint's look (readable in any system theme)

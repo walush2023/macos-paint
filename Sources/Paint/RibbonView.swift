@@ -31,7 +31,11 @@ final class RibbonView: NSView {
 
     // MARK: - 統一字級
     /// 所有文字標籤（按鈕標題、小按鈕、群組標籤、下拉、勾選框、色彩標籤）都用這個。
-    static let textFont = NSFont.systemFont(ofSize: 11)
+    static let textFont = NSFont.systemFont(ofSize: 12)
+    /// 以 textFont 量測文字寬度（各語言字串長短不一，按鈕/群組依此自動加寬）。
+    static func textWidth(_ s: String) -> CGFloat {
+        ceil((s as NSString).size(withAttributes: [.font: textFont]).width)
+    }
     /// 大按鈕的 emoji 圖示。
     static let bigIconFont = NSFont.systemFont(ofSize: 22)
     /// 工具/形狀格點的符號字級。
@@ -94,17 +98,24 @@ final class RibbonView: NSView {
         x = buildSizeGroup(x: x); x = drawSeparator(x: x)
         x = buildColorsGroup(x: x)
 
-        let needed = x + 12
-        if needed > frame.width {
-            setFrameSize(NSSize(width: needed, height: frame.height))
-        }
+        contentWidth = x + 8
+        fitToScrollView()
+    }
+
+    /// 內容所需寬度（各語言不同）。
+    private(set) var contentWidth: CGFloat = 0
+    /// 寬度 = max(內容寬, 可見寬)；視窗太窄時由外層捲動檢視水平捲動，不會被裁掉。
+    func fitToScrollView() {
+        let visible = enclosingScrollView?.contentSize.width ?? frame.width
+        setFrameSize(NSSize(width: max(contentWidth, visible), height: frame.height))
     }
 
     private func buildViewTabLayout() {
         var x: CGFloat = 6
         x = buildZoomGroup(x: x); x = drawSeparator(x: x)
         x = buildShowHideGroup(x: x); x = drawSeparator(x: x)
-        _ = buildDisplayGroup(x: x)
+        contentWidth = buildDisplayGroup(x: x) + 12
+        fitToScrollView()
     }
 
     private func buildZoomGroup(x: CGFloat) -> CGFloat {
@@ -112,38 +123,37 @@ final class RibbonView: NSView {
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoomIn(_:)), with: nil)
         }
         addSubview(zoomIn)
-        let zoomOut = makeBigButton(title: tr("縮小"), icon: "🔍−", x: x + 58) { [weak self] _ in
+        let zoomOut = makeBigButton(title: tr("縮小"), icon: "🔍−", x: zoomIn.frame.maxX + 4) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoomOut(_:)), with: nil)
         }
         addSubview(zoomOut)
-        let zoom100 = makeBigButton(title: "100%", icon: "💯", x: x + 116) { [weak self] _ in
+        let zoom100 = makeBigButton(title: "100%", icon: "💯", x: zoomOut.frame.maxX + 4) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.zoom100(_:)), with: nil)
         }
         addSubview(zoom100)
-        addGroupLabel(tr("縮放"), x: x, w: 170)
-        return x + 174 + 4
+        return addGroupLabel(tr("縮放"), x: x, w: zoom100.frame.maxX - x) + 4
     }
 
     private func buildShowHideGroup(x: CGFloat) -> CGFloat {
         let rowH: CGFloat = 24
         let topY = centeredY(rowH * 3)
+        let boxW = max(110, [tr("尺規"), tr("格線"), tr("狀態列")].map { RibbonView.textWidth($0) + 26 }.max()!)
         let rulers = NSButton(checkboxWithTitle: tr("尺規"), target: self, action: #selector(toggleRulersBox(_:)))
         rulers.state = PaintState.shared.showRulers ? .on : .off
         rulers.font = RibbonView.textFont
-        rulers.frame = NSRect(x: x, y: topY, width: 110, height: 22)
+        rulers.frame = NSRect(x: x, y: topY, width: boxW, height: 22)
         addSubview(rulers)
         let grid = NSButton(checkboxWithTitle: tr("格線"), target: self, action: #selector(toggleGridBox(_:)))
         grid.state = PaintState.shared.showGridlines ? .on : .off
         grid.font = RibbonView.textFont
-        grid.frame = NSRect(x: x, y: topY + rowH, width: 110, height: 22)
+        grid.frame = NSRect(x: x, y: topY + rowH, width: boxW, height: 22)
         addSubview(grid)
         let status = NSButton(checkboxWithTitle: tr("狀態列"), target: self, action: #selector(toggleStatusBox(_:)))
         status.state = PaintState.shared.showStatusBar ? .on : .off
         status.font = RibbonView.textFont
-        status.frame = NSRect(x: x, y: topY + rowH * 2, width: 110, height: 22)
+        status.frame = NSRect(x: x, y: topY + rowH * 2, width: boxW, height: 22)
         addSubview(status)
-        addGroupLabel(tr("顯示或隱藏"), x: x, w: 110)
-        return x + 114
+        return addGroupLabel(tr("顯示或隱藏"), x: x, w: boxW) + 4
     }
 
     private func buildDisplayGroup(x: CGFloat) -> CGFloat {
@@ -151,8 +161,7 @@ final class RibbonView: NSView {
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.toggleFullScreen(_:)), with: nil)
         }
         addSubview(fs)
-        addGroupLabel(tr("顯示"), x: x, w: 54)
-        return x + 58
+        return addGroupLabel(tr("顯示"), x: x, w: fs.frame.width) + 4
     }
 
     @objc private func toggleRulersBox(_ sender: NSButton) {
@@ -173,7 +182,7 @@ final class RibbonView: NSView {
         let v = NSBox(frame: NSRect(x: x, y: topPad, width: 1, height: bandH + 4))
         v.boxType = .separator
         addSubview(v)
-        return x + 8
+        return x + 6
     }
 
     // MARK: - Groups
@@ -185,9 +194,10 @@ final class RibbonView: NSView {
             self?.window?.windowController?.tryToPerform(Selector("paste:"), with: nil)
         }
         addSubview(paste)
-        x += 58
+        x += paste.frame.width + 4
         // 剪下 / 複製：兩列垂直置中
-        let rowH: CGFloat = 24, smallW: CGFloat = 70
+        let rowH: CGFloat = 24
+        let smallW = max(70, smallButtonWidth([("✂", tr("剪下")), ("📑", tr("複製"))]))
         let topY = centeredY(rowH * 2)
         let cut = makeSmallButton(title: tr("剪下"), icon: "✂", y: topY, width: smallW) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(Selector("cut:"), with: nil)
@@ -198,8 +208,7 @@ final class RibbonView: NSView {
         }
         copy.frame.origin.x = x; addSubview(copy)
         x += smallW
-        addGroupLabel(tr("剪貼簿"), x: startX, w: x - startX)
-        return x + 4
+        return addGroupLabel(tr("剪貼簿"), x: startX, w: x - startX) + 4
     }
 
     private func buildImageGroup(x: CGFloat) -> CGFloat {
@@ -211,10 +220,11 @@ final class RibbonView: NSView {
         toolButtons[.selectRect] = sel
         toolButtons[.selectFree] = sel
         addSubview(sel)
-        x += 58
+        x += sel.frame.width + 4
 
         // 裁剪 / 重新調整大小 / 旋轉：三列垂直置中
-        let rowH: CGFloat = 24, smallW: CGFloat = 124
+        let rowH: CGFloat = 24
+        let smallW = max(96, smallButtonWidth([("✂", tr("裁剪")), ("⤢", tr("重新調整大小")), ("⟳", tr("旋轉 ▾"))]))
         let topY = centeredY(rowH * 3)
         let crop = makeSmallButton(title: tr("裁剪"), icon: "✂", y: topY, width: smallW) { [weak self] _ in
             self?.window?.windowController?.tryToPerform(#selector(MainWindowController.cropImage(_:)), with: nil)
@@ -227,8 +237,7 @@ final class RibbonView: NSView {
         }; rotate.frame.origin.x = x; addSubview(rotate)
         x += smallW
 
-        addGroupLabel(tr("影像"), x: startX, w: x - startX)
-        return x + 4
+        return addGroupLabel(tr("影像"), x: startX, w: x - startX) + 4
     }
 
     private func buildToolsGroup(x: CGFloat) -> CGFloat {
@@ -257,8 +266,7 @@ final class RibbonView: NSView {
             addSubview(btn)
             toolButtons[info.0] = btn
         }
-        addGroupLabel(tr("工具"), x: gridX, w: gridW)
-        return gridX + gridW + 4
+        return addGroupLabel(tr("工具"), x: gridX, w: gridW) + 4
     }
 
     /// 油漆桶容許度（垂直滑桿 + 百分比），調高可一起填掉相近的顏色。
@@ -283,8 +291,7 @@ final class RibbonView: NSView {
         toleranceLabel.frame = NSRect(x: x, y: topPad + sliderH + 3, width: groupW, height: 16)
         addSubview(toleranceLabel)
 
-        addGroupLabel(tr("容許度"), x: x, w: groupW)
-        return x + groupW + 4
+        return addGroupLabel(tr("容許度"), x: x, w: groupW) + 4
     }
 
     @objc private func toleranceChanged(_ sender: NSSlider) {
@@ -298,8 +305,7 @@ final class RibbonView: NSView {
             self?.showBrushMenu(from: sender)
         }
         addSubview(big)
-        addGroupLabel(tr("筆刷"), x: x, w: 54)
-        return x + 58
+        return addGroupLabel(tr("筆刷"), x: x, w: big.frame.width) + 4
     }
 
     private func buildShapesGroup(x: CGFloat) -> CGFloat {
@@ -319,7 +325,7 @@ final class RibbonView: NSView {
             (.heart, tr("愛心"), "♥"), (.lightning, tr("閃電"), "⚡"),
         ]
         let cols = 12
-        let shapeCell: CGFloat = 23
+        let shapeCell: CGFloat = 22
         let gridW = shapeCell * CGFloat(cols)
         let gridH = shapeCell * 2
         let dropH: CGFloat = 22
@@ -365,8 +371,7 @@ final class RibbonView: NSView {
         fillMenu.action = #selector(fillChanged(_:))
         addSubview(fillMenu)
 
-        addGroupLabel(tr("圖案"), x: x, w: gridW)
-        return x + gridW + 4
+        return addGroupLabel(tr("圖案"), x: x, w: gridW) + 4
     }
 
     private func buildSizeGroup(x: CGFloat) -> CGFloat {
@@ -374,8 +379,7 @@ final class RibbonView: NSView {
             self?.showSizeMenu(from: sender)
         }
         addSubview(big)
-        addGroupLabel(tr("大小"), x: x, w: 54)
-        return x + 58
+        return addGroupLabel(tr("大小"), x: x, w: big.frame.width) + 4
     }
 
     private func buildColorsGroup(x: CGFloat) -> CGFloat {
@@ -385,16 +389,17 @@ final class RibbonView: NSView {
         let swatchH: CGFloat = 60
         let swatchY = centeredY(swatchH)
         color1Well = ColorSwatchView(label: tr("色彩 1"), color: PaintState.shared.color1, isSecondary: false)
-        color1Well.frame = NSRect(x: x, y: swatchY, width: 40, height: swatchH)
+        let wellW = max(40, max(RibbonView.textWidth(tr("色彩 1")), RibbonView.textWidth(tr("色彩 2"))) + 8)
+        color1Well.frame = NSRect(x: x, y: swatchY, width: wellW, height: swatchH)
         color1Well.onClick = { [weak self] in self?.activateSwatch(secondary: false) }
         addSubview(color1Well)
-        x += 44
+        x += wellW + 4
 
         color2Well = ColorSwatchView(label: tr("色彩 2"), color: PaintState.shared.color2, isSecondary: true)
-        color2Well.frame = NSRect(x: x, y: swatchY, width: 40, height: swatchH)
+        color2Well.frame = NSRect(x: x, y: swatchY, width: wellW, height: swatchH)
         color2Well.onClick = { [weak self] in self?.activateSwatch(secondary: true) }
         addSubview(color2Well)
-        x += 50
+        x += wellW + 6
 
         // Palette 10x2（垂直置中）
         let cellSize: CGFloat = 16, cellGap: CGFloat = 1
@@ -436,16 +441,29 @@ final class RibbonView: NSView {
             self?.openColorPicker()
         }
         addSubview(editBtn)
-        x += 58
+        x += editBtn.frame.width + 4
 
-        addGroupLabel(tr("色彩"), x: startX, w: x - startX)
-        return x + 4
+        return addGroupLabel(tr("色彩"), x: startX, w: x - startX - 4) + 4
     }
 
     // MARK: - Button factories
 
     private func makeBigButton(title: String, icon: String, x: CGFloat, action: @escaping (NSButton) -> Void) -> NSButton {
-        let btn = ActionButton(frame: NSRect(x: x, y: topPad, width: 54, height: bandH))
+        // 標題過長（如「Farben bearbeiten」）→ 折成兩行，按鈕不會撐太寬
+        let fullW = RibbonView.textWidth(title)
+        let words = title.replacingOccurrences(of: " ▾", with: "\u{00A0}▾").split(separator: " ").map(String.init)
+        let wraps = fullW + 10 > 76 && words.count > 1
+        // 兩行時找最平均的斷點：兩行中較寬者最小
+        var best = fullW
+        if words.count > 1 {
+            for i in 1..<words.count {
+                let l1 = RibbonView.textWidth(words[..<i].joined(separator: " "))
+                let l2 = RibbonView.textWidth(words[i...].joined(separator: " "))
+                best = min(best, max(l1, l2))
+            }
+        }
+        let btnW = wraps ? max(54, best + 12) : max(54, fullW + 10)
+        let btn = ActionButton(frame: NSRect(x: x, y: topPad, width: btnW, height: bandH))
         btn.bezelStyle = .smallSquare
         btn.isBordered = false
         btn.title = ""
@@ -471,6 +489,12 @@ final class RibbonView: NSView {
         titleLbl.drawsBackground = false
         titleLbl.isEditable = false
         titleLbl.textColor = NSColor.black
+        if wraps {
+            titleLbl.maximumNumberOfLines = 2
+            titleLbl.lineBreakMode = .byWordWrapping
+            titleLbl.preferredMaxLayoutWidth = btnW - 4
+            titleLbl.cell?.wraps = true
+        }
         stack.addArrangedSubview(iconLbl)
         stack.addArrangedSubview(titleLbl)
         stack.frame = btn.bounds
@@ -519,15 +543,24 @@ final class RibbonView: NSView {
         return btn
     }
 
-    private func addGroupLabel(_ s: String, x: CGFloat, w: CGFloat) {
+    /// 小按鈕（圖示＋文字）所需寬度：取最長者。
+    private func smallButtonWidth(_ items: [(String, String)]) -> CGFloat {
+        items.map { RibbonView.textWidth("\($0.0)  \($0.1)") + 14 }.max() ?? 0
+    }
+
+    /// 加群組標籤；標籤比內容寬時群組自動加寬。回傳群組右緣。
+    @discardableResult
+    private func addGroupLabel(_ s: String, x: CGFloat, w: CGFloat) -> CGFloat {
+        let w = max(w, RibbonView.textWidth(s) + 8)
         let lbl = NSTextField(labelWithString: s)
         lbl.font = RibbonView.textFont
         lbl.alignment = .center
         lbl.textColor = NSColor(calibratedWhite: 0.25, alpha: 1)
         lbl.drawsBackground = false
         lbl.isBordered = false
-        lbl.frame = NSRect(x: x, y: labelY, width: w, height: 14)
+        lbl.frame = NSRect(x: x, y: labelY, width: w, height: 16)
         addSubview(lbl)
+        return x + w
     }
 
     // MARK: - Actions

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuDelegate {
     let canvas = CanvasView(size: NSSize(width: 800, height: 600))
     let ribbon = RibbonView()
+    private let ribbonScroll = NSScrollView()
     let statusBar = StatusBarView()
     let scrollView = NSScrollView()
     let tabBar = TabBarView()
@@ -68,10 +69,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuDe
         content.addSubview(tabBar)
 
         // ribbon 位於 tab bar 下方
-        ribbon.frame = NSRect(x: 0, y: h - tabBarHeight - ribbonHeight,
-                              width: content.bounds.width, height: ribbonHeight)
-        ribbon.autoresizingMask = [.width, .minYMargin]
-        content.addSubview(ribbon)
+        // ribbon 放在水平捲動檢視中：視窗比 ribbon 窄時可左右捲動（長語言字串也不會被裁掉）
+        ribbonScroll.frame = NSRect(x: 0, y: h - tabBarHeight - ribbonHeight,
+                                    width: content.bounds.width, height: ribbonHeight)
+        ribbonScroll.autoresizingMask = [.width, .minYMargin]
+        ribbonScroll.hasHorizontalScroller = true
+        ribbonScroll.hasVerticalScroller = false
+        ribbonScroll.autohidesScrollers = true
+        ribbonScroll.scrollerStyle = .overlay
+        ribbonScroll.drawsBackground = false
+        ribbon.frame = NSRect(x: 0, y: 0, width: content.bounds.width, height: ribbonHeight)
+        ribbonScroll.documentView = ribbon
+        content.addSubview(ribbonScroll)
+        ribbon.fitToScrollView()
 
         // 狀態列
         statusBar.frame = NSRect(x: 0, y: 0, width: content.bounds.width, height: statusBarHeight)
@@ -599,6 +609,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuDe
 
     /// 視窗縮放（含放大到全螢幕／縮放鈕）後重新排版，畫布維持靠左上。
     func windowDidResize(_ notification: Notification) {
+        ribbon.fitToScrollView()
         layoutDocument()
     }
 
@@ -713,7 +724,7 @@ final class StatusBarView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor(calibratedWhite: 0.9, alpha: 1).cgColor
         for lbl in [posLabel, sizeLabel, selLabel, zoomLabel] {
-            lbl.font = NSFont.systemFont(ofSize: 11)
+            lbl.font = NSFont.systemFont(ofSize: 12)
             lbl.textColor = NSColor.black
             lbl.drawsBackground = false
             lbl.isBordered = false

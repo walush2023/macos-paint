@@ -1,13 +1,19 @@
 import AppKit
 
 var args = CommandLine.arguments
-// 測試/預覽用：--lang en|zh-Hans|zh-Hant|ja 強制介面語言
+// 測試/預覽用：--lang en|zh-Hans|zh-Hant|ja|ko|fr|de|es|it|pt 強制介面語言
 if let i = args.firstIndex(of: "--lang"), i + 1 < args.count {
     switch args[i + 1].lowercased() {
     case "en":               L10n.override = .en
     case "zh-hans", "hans":  L10n.override = .zhHans
     case "zh-hant", "hant":  L10n.override = .zhHant
     case "ja":               L10n.override = .ja
+    case "ko":               L10n.override = .ko
+    case "fr":               L10n.override = .fr
+    case "de":               L10n.override = .de
+    case "es":               L10n.override = .es
+    case "it":               L10n.override = .it
+    case "pt", "pt-br":      L10n.override = .pt
     default: break
     }
     args.removeSubrange(i...(i + 1))
