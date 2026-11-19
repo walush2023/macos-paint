@@ -104,6 +104,16 @@ Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right tri
 
 ---
 
+## Download
+
+Grab **`Paint-macOS.zip`** from the [latest release](https://github.com/walush2023/macos-paint/releases/latest), unzip it and drag **Paint.app** to *Applications*.
+
+- **Signed with a Developer ID and notarized by Apple** — it opens with a normal double‑click, no Gatekeeper warning or `xattr` workaround needed.
+- **Universal binary** — runs natively on both Apple Silicon and Intel Macs.
+- Bundle identifier: `com.walush.paint`
+
+---
+
 ## Requirements
 
 - **macOS 12 (Monterey)** or later
@@ -124,6 +134,17 @@ open Paint.app
 
 `build_app.sh` compiles the Swift Package, regenerates `AppIcon.icns` from `icon.png` (via `sips` + `iconutil`), and assembles `Paint.app` with its `Info.plist` and icon.
 
+### Signed & notarized release
+
+```bash
+./release.sh        # universal release build → Developer ID signing (hardened runtime)
+                    # → Apple notarization → staple → dist/Paint-macOS.zip
+```
+
+Needs a *Developer ID Application* certificate in the keychain and a `notarytool` credential profile
+(`xcrun notarytool store-credentials`); override with the `SIGN_ID` / `NOTARY_PROFILE` environment variables.
+The Intel slice needs full Xcode (the Command Line Tools ship arm64‑only Swift libraries).
+
 ### Run directly with SwiftPM
 
 ```bash
@@ -138,8 +159,8 @@ swift build
 The app ships with a self‑contained test harness — no XCTest target required. Each mode is a command‑line flag on the same binary.
 
 ```bash
-# 23 functional unit tests (history, flood fill, tolerance, selection,
-# rotate/flip, resize, file round‑trip, zoom steps, cursors, transparency …)
+# 62 functional unit tests (history, flood fill, selection, text box, shapes,
+# file round‑trip, zoom, cursors, transparency, all 10 languages …)
 .build/debug/Paint --unit-test
 
 # Render every tool & shape into a 4×4 grid PNG (drawing‑engine check)
@@ -155,7 +176,7 @@ Extra diagnostic render modes used during development:
 
 | Flag | Purpose |
 |---|---|
-| `--unit-test` | Run all 23 assertions; exits non‑zero on failure |
+| `--unit-test` | Run all 62 tests; exits non‑zero on failure |
 | `--test <out.png>` | Draw all tools/shapes into a labelled grid |
 | `--render-window <out.png>` | Offscreen snapshot of the whole window |
 | `--cursor-preview <out.png>` | Enlarged preview of every tool cursor (with hot‑spots) |
@@ -170,7 +191,7 @@ A single SwiftPM executable target. Key types:
 
 | File | Responsibility |
 |---|---|
-| `main.swift` | Entry point + CLI test/render mode dispatch |
+| `main.swift` | Entry point + CLI test/render mode dispatch (`--lang xx` forces a UI language) |
 | `AppDelegate.swift` | App lifecycle, main menu, dock icon |
 | `MainWindowController.swift` | Window layout, file/edit/image/view actions, status bar |
 | `TabBarView.swift` | File / Home / View ribbon tabs |
@@ -180,6 +201,8 @@ A single SwiftPM executable target. Key types:
 | `Shapes.swift` | `NSBezierPath` geometry for all 23 shapes |
 | `Cursors.swift` | Vector, retina‑rendered tool cursors |
 | `Dialogs.swift` | Color picker & resize sheets |
+| `Localization.swift` / `LocalizationExtra.swift` | 10‑language string tables |
+| `Rulers.swift` | Pixel rulers & Open Recent list |
 | `Models.swift` | Shared `PaintState`, enums, palette, undo `History`, transparent‑color helpers |
 | `SelfTest.swift` / `UISnapshot.swift` / `UnitTests.swift` | Headless test & render harnesses |
 

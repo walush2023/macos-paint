@@ -6,3 +6,4 @@ Paint.app/
 *.dSYM/
 .DS_Store
 AppIcon.iconset/
+dist/
