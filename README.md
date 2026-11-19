@@ -106,7 +106,7 @@ Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right tri
 
 ## Download
 
-Grab **`Paint-macOS.zip`** from the [latest release](https://github.com/walush2023/macos-paint/releases/latest), unzip it and drag **Paint.app** to *Applications*.
+Grab **`Paint-macOS.dmg`** from the [latest release](https://github.com/walush2023/macos-paint/releases/latest), open it and drag **Paint.app** onto the *Applications* shortcut.
 
 - **Signed with a Developer ID and notarized by Apple** — it opens with a normal double‑click, no Gatekeeper warning or `xattr` workaround needed.
 - **Universal binary** — runs natively on both Apple Silicon and Intel Macs.
@@ -138,7 +138,7 @@ open Paint.app
 
 ```bash
 ./release.sh        # universal release build → Developer ID signing (hardened runtime)
-                    # → Apple notarization → staple → dist/Paint-macOS.zip
+                    # → Apple notarization → staple → notarized dist/Paint-macOS.dmg
 ```
 
 Needs a *Developer ID Application* certificate in the keychain and a `notarytool` credential profile

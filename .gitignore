@@ -7,3 +7,4 @@ Paint.app/
 .DS_Store
 AppIcon.iconset/
 dist/
+*.dmg

@@ -1,6 +1,6 @@
 #!/bin/bash
 # 正式發行：Universal (arm64 + x86_64) release 編譯 → Developer ID 簽章(hardened runtime)
-# → Apple 公證 → staple → 產出 Paint-macOS.zip
+# → Apple 公證 → staple → 產出 Paint-macOS.dmg
 #
 # 用法：./release.sh
 # 環境變數（可覆寫）：
@@ -51,7 +51,21 @@ xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose=2 "$APP"
 
-# 重新打包（含 staple 票證，離線也能通過 Gatekeeper）
-rm -f "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP"
-echo "✓ 完成：$ZIP"
+# DMG：App + 指向 /Applications 的捷徑，拖曳即可安裝
+echo "→ 製作 DMG..."
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$ROOT/Info.plist")
+DMG="$ROOT/dist/Paint-macOS.dmg"
+STAGE="$ROOT/dist/dmg"
+rm -rf "$STAGE" "$DMG" "$ZIP"; mkdir -p "$STAGE"
+cp -R "$APP" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+hdiutil create -volname "Paint $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$DMG" >/dev/null
+rm -rf "$STAGE"
+
+echo "→ 簽章並公證 DMG..."
+codesign --force --timestamp --sign "$SIGN_ID" "$DMG"
+xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun stapler staple "$DMG"
+xcrun stapler validate "$DMG"
+spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+echo "✓ 完成：$DMG"
