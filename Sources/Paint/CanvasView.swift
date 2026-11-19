@@ -744,7 +744,8 @@ final class CanvasView: NSView, NSTextViewDelegate {
     // MARK: - Mouse handling
 
     override func mouseDown(with event: NSEvent) {
-        dragButton = 0
+        // Mac 慣例：Control+點按 等同右鍵（觸控板使用者也能用色彩 2 / 換色橡皮擦）
+        dragButton = event.modifierFlags.contains(.control) ? 1 : 0
         handleMouseDown(canvasPoint(event), event: event)
     }
     override func rightMouseDown(with event: NSEvent) {
@@ -1688,7 +1689,11 @@ final class CanvasView: NSView, NSTextViewDelegate {
         let wrapW = textFixedWidth ?? max(20, bounds.width - textAnchorTopLeft.x)
         tc.containerSize = NSSize(width: wrapW, height: .greatestFiniteMagnitude)
         lm.ensureLayout(for: tc)
-        let used = lm.usedRect(for: tc).size
+        // 以與合入時相同的方式量測文字實際範圍（usedRect 在重排後可能回報整個容器寬）
+        var used = tv.attributedString().boundingRect(
+            with: NSSize(width: wrapW, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin]).size
+        if tv.string.hasSuffix("\n") { used.height += lm.defaultLineHeight(for: tv.font ?? PaintState.shared.currentTextFont()) }
         let lineH = lm.defaultLineHeight(for: tv.font ?? PaintState.shared.currentTextFont())
         let w = textFixedWidth ?? max(60, ceil(used.width) + 6)
         let h = max(textMinHeight, max(lineH, ceil(used.height)) + 4)

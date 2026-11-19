@@ -597,6 +597,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuDe
 
     // MARK: - 關閉視窗前確認
 
+    /// 視窗縮放（含放大到全螢幕／縮放鈕）後重新排版，畫布維持靠左上。
+    func windowDidResize(_ notification: Notification) {
+        layoutDocument()
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard isDirty else { return true }
         confirmDiscardIfNeeded { [weak self] proceed in

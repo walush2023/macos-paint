@@ -41,6 +41,8 @@ final class TextFormatPanel: NSWindowController, NSComboBoxDelegate {
         // 字型
         fontPopup = NSPopUpButton(frame: NSRect(x: x, y: y, width: 160, height: 25))
         let families = NSFontManager.shared.availableFontFamilies.sorted()
+        fontPopup.addItem(withTitle: tr("系統字體"))   // 第 0 項：系統字體（不在 availableFontFamilies 內）
+        fontPopup.menu?.addItem(.separator())
         fontPopup.addItems(withTitles: families)
         fontPopup.target = self
         fontPopup.action = #selector(fontChanged)
@@ -121,8 +123,10 @@ final class TextFormatPanel: NSWindowController, NSComboBoxDelegate {
 
     private func syncControlsFromState() {
         let s = PaintState.shared
-        if let i = fontPopup.itemTitles.firstIndex(where: { $0 == familyOf(s.textFontName) }) {
+        if let i = fontPopup.itemTitles.firstIndex(where: { $0 == familyOf(s.textFontName) }), i > 1 {
             fontPopup.selectItem(at: i)
+        } else {
+            fontPopup.selectItem(at: 0)   // 系統字體（或找不到的字型）
         }
         sizeCombo.stringValue = "\(Int(s.textFontSize))"
         boldBtn.state = s.textBold ? .on : .off
@@ -135,7 +139,9 @@ final class TextFormatPanel: NSWindowController, NSComboBoxDelegate {
     }
 
     @objc private func fontChanged() {
-        if let fam = fontPopup.titleOfSelectedItem,
+        if fontPopup.indexOfSelectedItem == 0 {
+            PaintState.shared.textFontName = NSFont.systemFont(ofSize: 24).fontName
+        } else if let fam = fontPopup.titleOfSelectedItem,
            let f = NSFontManager.shared.font(withFamily: fam, traits: [], weight: 5, size: PaintState.shared.textFontSize) {
             PaintState.shared.textFontName = f.fontName
         } else if let fam = fontPopup.titleOfSelectedItem {

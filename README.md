@@ -64,7 +64,8 @@ Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right tri
 - Resize dialog keeps the aspect ratio when the box is ticked
 
 ### Colors
-- 20‑swatch standard Paint palette + Color 1 / Color 2
+- 20‑swatch standard Paint palette + Color 1 / Color 2 — select Color 2, then a swatch (or *Edit colors*) sets Color 2; right‑click a swatch also sets Color 2
+- **Control‑click acts as right‑click** on the canvas and palette (trackpad friendly)
 - **Transparent color** swatch — draw, fill, or erase to genuine transparency
 - "Edit colors" opens the native macOS color panel; picked colors are remembered
 

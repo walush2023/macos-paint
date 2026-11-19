@@ -1184,6 +1184,12 @@ enum UnitTests {
         assertTrue("eraserReplace.whiteKept", white.0 == 255 && white.1 == 255)
         assertTrue("eraserReplace.outsideKept", untouched.0 == 255 && untouched.2 == 0)
         assertTrue("eraserReplace.undoable", cv.canUndo())
+        // Control+左鍵拖曳 = 右鍵（觸控板）
+        mouse(cv, .leftMouseDown, 20, 60, flags: .control)
+        mouse(cv, .leftMouseDragged, 30, 60, flags: .control)
+        mouse(cv, .leftMouseUp, 30, 60, flags: .control)
+        let c = pixel(of: cv, 25, 60)!
+        assertTrue("eraserReplace.ctrlClick", c.0 == 0 && c.2 == 255)
         st.color1 = old.0; st.color2 = old.1; st.eraserSize = old.2; st.tool = old.3
     }
 
@@ -1203,6 +1209,7 @@ enum UnitTests {
         let f1 = cv.testTextFrame!
         assertTrue("textBox.stillEditing", cv.isEditingText)
         assertEq("textBox.moved", NSPoint(x: f1.minX, y: f1.maxY), NSPoint(x: 80, y: 130))
+        assertEq("textBox.moveKeepsSize", f1.size, f0.size)
         cv.commitText()
         // 文字被畫在新位置（舊位置 50..60 應仍是白的）
         var inkNew = false, inkOld = false

@@ -409,7 +409,9 @@ final class RibbonView: NSView {
                 y: paletteY + CGFloat(row) * (cellSize + cellGap),
                 width: cellSize, height: cellSize)
             cell.onClick = { [weak self] secondary in
-                if secondary { PaintState.shared.color2 = color } else { PaintState.shared.color1 = color }
+                // 右鍵，或目前選中「色彩 2」→ 設定色彩 2（同 Windows 小畫家）
+                if secondary || self?.color2Well.isActive == true { PaintState.shared.color2 = color }
+                else { PaintState.shared.color1 = color }
                 NotificationCenter.default.post(name: PaintState.colorChanged, object: nil)
             }
             paletteCells.append(cell)
@@ -421,7 +423,7 @@ final class RibbonView: NSView {
         let transCell = PaletteCellView(color: .paintTransparent, isTransparent: true)
         transCell.frame = NSRect(x: x, y: paletteY, width: cellSize, height: paletteH)
         transCell.onClick = { [weak self] secondary in
-            if secondary { PaintState.shared.color2 = .paintTransparent }
+            if secondary || self?.color2Well.isActive == true { PaintState.shared.color2 = .paintTransparent }
             else { PaintState.shared.color1 = .paintTransparent }
             NotificationCenter.default.post(name: PaintState.colorChanged, object: nil)
         }
@@ -655,9 +657,11 @@ final class RibbonView: NSView {
 
     private func openColorPicker() {
         guard let win = window else { return }
-        ColorPickerDialog.run(in: win, initial: PaintState.shared.color1) { color in
+        let toSecondary = color2Well.isActive
+        let st = PaintState.shared
+        ColorPickerDialog.run(in: win, initial: toSecondary ? st.color2 : st.color1) { color in
             guard let color = color else { return }
-            PaintState.shared.color1 = color
+            if toSecondary { PaintState.shared.color2 = color } else { PaintState.shared.color1 = color }
             if !PaintState.shared.customPalette.contains(where: { $0.isEqualRGB(color) }) {
                 PaintState.shared.customPalette.append(color)
             }
@@ -788,7 +792,7 @@ final class PaletteCellView: NSView {
         NSColor.darkGray.setStroke()
         NSBezierPath(rect: bounds).stroke()
     }
-    override func mouseDown(with event: NSEvent)       { onClick?(false) }
+    override func mouseDown(with event: NSEvent)       { onClick?(event.modifierFlags.contains(.control)) }
     override func rightMouseDown(with event: NSEvent)  { onClick?(true) }
 }
 
