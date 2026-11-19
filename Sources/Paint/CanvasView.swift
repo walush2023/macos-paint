@@ -1,7 +1,7 @@
 import AppKit
 
 /// 主畫布。底層是位元圖 (`bitmap`)，上層 (`overlay`) 用於形狀/選取預覽。
-final class CanvasView: NSView {
+final class CanvasView: NSView, NSTextViewDelegate {
     private(set) var bitmap: NSBitmapImageRep!
     private var overlay: NSImage = NSImage()
     let history = History()
@@ -582,6 +582,9 @@ final class CanvasView: NSView {
             path.stroke()
         }
 
+        // 3b) 文字框外框與把手
+        drawTextBoxDecoration()
+
         // 4) gridlines at high zoom
         if PaintState.shared.showGridlines && PaintState.shared.zoom >= 4 {
             NSColor(white: 0.7, alpha: 1).setStroke()
@@ -692,6 +695,23 @@ final class CanvasView: NSView {
         }
         return nil
     }
+    /// 以把手 h 拖到 p 後的新矩形（對側固定），寬高至少 minSize。
+    static func resized(_ r: NSRect, handle h: Handle, to p: NSPoint, minSize: CGFloat) -> NSRect {
+        var minX = r.minX, maxX = r.maxX, minY = r.minY, maxY = r.maxY
+        switch h {
+        case .nw, .w, .sw: minX = min(p.x, maxX - minSize)
+        case .ne, .e, .se: maxX = max(p.x, minX + minSize)
+        default: break
+        }
+        switch h {
+        case .nw, .n, .ne: maxY = max(p.y, minY + minSize)
+        case .sw, .s, .se: minY = min(p.y, maxY - minSize)
+        default: break
+        }
+        return NSRect(x: minX.rounded(), y: minY.rounded(),
+                      width: (maxX - minX).rounded(), height: (maxY - minY).rounded())
+    }
+
     private func applyResize(_ h: Handle, to p: NSPoint) {
         var r = resizeStartRect
         switch h {
@@ -754,6 +774,10 @@ final class CanvasView: NSView {
 
     /// 滑鼠停在選取上時，依把手/內部切換縮放或移動游標。
     private func updateHoverCursor(at p: NSPoint) {
+        if let d = textBoxHit(p) {
+            if case let .resize(h, _) = d { Cursors.resizeCursor(for: h).set() } else { Cursors.moveAll.set() }
+            return
+        }
         guard let sel = selectionRect else { return }   // 無選取 → 交給 cursorRect 的工具游標
         if let h = handleAt(p) {
             Cursors.resizeCursor(for: h).set()
@@ -776,6 +800,12 @@ final class CanvasView: NSView {
     private func handleMouseDown(_ p: NSPoint, event: NSEvent) {
         let tool = PaintState.shared.tool
         let pc = clampToCanvas(p)
+
+        // 0) 文字編輯中：拖框線移動、拖把手縮放文字框
+        if let d = textBoxHit(p) {
+            textBoxDrag = d
+            return
+        }
 
         // 1) 若已有 selection，先檢查是否點到 resize 把手
         if let _ = selectionRect, let h = handleAt(p) {
@@ -860,6 +890,10 @@ final class CanvasView: NSView {
             name: PaintState.statusUpdate, object: nil,
             userInfo: ["x": Int(pc.x), "y": Int(CGFloat(bitmap.pixelsHigh) - pc.y)]
         )
+        if let d = textBoxDrag {
+            dragTextBox(d, to: p)
+            return
+        }
         if let h = resizingHandle {
             applyResize(h, to: p)
             return
@@ -899,6 +933,11 @@ final class CanvasView: NSView {
 
     private func handleMouseUp(_ p: NSPoint, event: NSEvent) {
         let pc = clampToCanvas(p)
+        if textBoxDrag != nil {
+            textBoxDrag = nil
+            if let tv = activeTextField { window?.makeFirstResponder(tv) }
+            return
+        }
         if resizingHandle != nil {
             resizingHandle = nil
             return
@@ -954,44 +993,75 @@ final class CanvasView: NSView {
     // MARK: - Pencil / Brush / Eraser
 
     private func drawStroke(from a: NSPoint, to b: NSPoint, tool: Tool) {
+        // 橡皮擦右鍵：只把「色彩 1」的像素換成「色彩 2」（Windows 小畫家的換色橡皮擦）
+        if tool == .eraser && dragButton == 1 {
+            replaceColorStroke(from: a, to: b)
+            return
+        }
         let color = currentColor()
-        let bg = altColor()
-        let size = PaintState.shared.strokeSize
-        // 透明色：以 .clear 合成把覆蓋處清成透明。
-        let activeColor = (tool == .eraser) ? bg : color
+        let st = PaintState.shared
+        let size = st.strokeSize
+        // 橡皮擦一律用色彩 2（背景色）
+        let activeColor = (tool == .eraser) ? st.color2 : color
         let transparent = activeColor.isPaintTransparent
         drawInBitmap { ctx in
             if transparent { ctx.compositingOperation = .clear }
             switch tool {
-            case .pencil:
-                // 鉛筆：1px、不反鋸齒、對齊像素中心 → 清晰的像素線（同 Windows 小畫家）
+            case .pencil, .eraser:
+                // 鉛筆：不反鋸齒、對齊像素的 n×n 方點；橡皮擦：n×n 方塊
                 ctx.shouldAntialias = false
-                color.setFill()
-                let ax = floor(a.x), ay = floor(a.y), bx = floor(b.x), by = floor(b.y)
-                let steps = Int(max(abs(bx - ax), abs(by - ay)))
-                for i in 0...max(0, steps) {
-                    let t = steps == 0 ? 0 : CGFloat(i) / CGFloat(steps)
-                    let x = (ax + (bx - ax) * t).rounded(), y = (ay + (by - ay) * t).rounded()
-                    NSRect(x: x, y: y, width: 1, height: 1).fill()
-                }
-            case .eraser:
-                bg.setFill()
-                let half = size / 2
-                let steps = max(1, Int(hypot(b.x - a.x, b.y - a.y)))
-                for i in 0...steps {
-                    let t = CGFloat(i) / CGFloat(steps)
-                    let x = a.x + (b.x - a.x) * t
-                    let y = a.y + (b.y - a.y) * t
-                    NSRect(x: x - half, y: y - half, width: size, height: size).fill()
+                activeColor.setFill()
+                let n = tool == .pencil ? max(1, st.pencilSize.rounded()) : max(1, st.eraserSize.rounded())
+                for p in CanvasView.pixelLine(from: a, to: b) {
+                    CanvasView.squareRect(at: p, size: n).fill()
                 }
             case .brush:
-                BrushRenderer.render(
-                    kind: PaintState.shared.brushKind,
-                    from: a, to: b, color: color, size: size
-                )
+                BrushRenderer.render(kind: st.brushKind, from: a, to: b, color: color, size: size)
             default: break
             }
         }
+    }
+
+    /// a→b 之間逐像素的整數點（含兩端）。
+    static func pixelLine(from a: NSPoint, to b: NSPoint) -> [NSPoint] {
+        let ax = floor(a.x), ay = floor(a.y), bx = floor(b.x), by = floor(b.y)
+        let steps = Int(max(abs(bx - ax), abs(by - ay)))
+        return (0...max(0, steps)).map { i in
+            let t = steps == 0 ? 0 : CGFloat(i) / CGFloat(steps)
+            return NSPoint(x: (ax + (bx - ax) * t).rounded(), y: (ay + (by - ay) * t).rounded())
+        }
+    }
+    /// 以像素 p 為中心、邊長 n 的整數方塊（n 為偶數時往左下偏半格）。
+    static func squareRect(at p: NSPoint, size n: CGFloat) -> NSRect {
+        let off = floor((n - 1) / 2)
+        return NSRect(x: p.x - off, y: p.y - off, width: n, height: n)
+    }
+
+    /// 換色橡皮擦：筆跡範圍內，與色彩 1 完全相同的像素改成色彩 2（可為透明）。
+    private func replaceColorStroke(from a: NSPoint, to b: NSPoint) {
+        guard let data = bitmap.bitmapData else { return }
+        let st = PaintState.shared
+        let from = premultipliedBytes(st.color1)
+        let to: (UInt8, UInt8, UInt8, UInt8) = st.color2.isPaintTransparent ? (0, 0, 0, 0) : premultipliedBytes(st.color2)
+        let n = max(1, st.eraserSize.rounded())
+        let w = bitmap.pixelsWide, h = bitmap.pixelsHigh, bpr = bitmap.bytesPerRow
+        let spp = bitmap.samplesPerPixel
+        for p in CanvasView.pixelLine(from: a, to: b) {
+            let r = CanvasView.squareRect(at: p, size: n)
+            let x0 = max(0, Int(r.minX)), x1 = min(w, Int(r.maxX))
+            let y0 = max(0, Int(r.minY)), y1 = min(h, Int(r.maxY))
+            guard x0 < x1, y0 < y1 else { continue }
+            for vy in y0..<y1 {
+                let row = (h - 1 - vy) * bpr       // 視覺座標 y（左下原點）→ 資料列（上到下）
+                for x in x0..<x1 {
+                    let o = row + x * spp
+                    if data[o] == from.0 && data[o + 1] == from.1 && data[o + 2] == from.2 && data[o + 3] == from.3 {
+                        data[o] = to.0; data[o + 1] = to.1; data[o + 2] = to.2; data[o + 3] = to.3
+                    }
+                }
+            }
+        }
+        needsDisplay = true
     }
 
     // MARK: - Fill (flood fill)
@@ -1567,25 +1637,39 @@ final class CanvasView: NSView {
 
     // MARK: - Text tool
 
-    private var textAnchorTopLeft: NSPoint = .zero   // 文字左上角（畫布座標）
+    private var textAnchorTopLeft: NSPoint = .zero   // 文字框左上角（畫布座標）
+    /// 使用者拖曳把手設定的固定寬度（nil = 依內容自動延展）與最小高度。
+    private var textFixedWidth: CGFloat?
+    private var textMinHeight: CGFloat = 0
+    /// 正在拖曳文字框：移動或以把手縮放。
+    private enum TextBoxDrag { case move(start: NSPoint, origin: NSPoint), resize(Handle, start: NSRect) }
+    private var textBoxDrag: TextBoxDrag?
 
     private func beginText(at p: NSPoint) {
         let font = PaintState.shared.currentTextFont()
-        textAnchorTopLeft = p
+        textAnchorTopLeft = NSPoint(x: p.x.rounded(), y: p.y.rounded())
+        textFixedWidth = nil
+        textMinHeight = 0
         let h: CGFloat = max(40, font.pointSize * 1.8)
-        let tv = NSTextView(frame: NSRect(x: p.x, y: p.y - h, width: 320, height: h))
+        let tv = NSTextView(frame: NSRect(x: textAnchorTopLeft.x, y: textAnchorTopLeft.y - h, width: 60, height: h))
         tv.isRichText = true
         tv.drawsBackground = false
         tv.backgroundColor = .clear
         tv.textColor = PaintState.shared.color1
         tv.font = font
-        tv.isVerticallyResizable = true
+        tv.typingAttributes[.font] = font
+        tv.typingAttributes[.foregroundColor] = PaintState.shared.color1
+        tv.isVerticallyResizable = false
         tv.isHorizontallyResizable = false
         tv.textContainerInset = NSSize(width: 0, height: 0)
         tv.textContainer?.lineFragmentPadding = 0
+        tv.textContainer?.widthTracksTextView = false
+        tv.textContainer?.heightTracksTextView = false
+        tv.delegate = self
         addSubview(tv)
         window?.makeFirstResponder(tv)
         activeTextField = tv
+        fitTextView()
 
         // 顯示文字格式面板（字型/字級/粗體/斜體/底線/顏色）
         let winPt = convert(p, to: nil)
@@ -1595,14 +1679,69 @@ final class CanvasView: NSView {
         }
     }
 
-    /// 依目前文字內容/字型重算編輯框大小，左上角固定在 anchor。
+    func textDidChange(_ notification: Notification) { fitTextView() }
+
+    /// 依內容/字型/使用者設定的寬高重算編輯框，左上角固定在 anchor。
+    /// 自動模式：寬度隨內容延展（最多到畫布右緣）；固定寬度：在框內自動換行。
     private func fitTextView() {
-        guard let tv = activeTextField else { return }
-        tv.layoutManager?.ensureLayout(for: tv.textContainer!)
-        let used = tv.layoutManager?.usedRect(for: tv.textContainer!).size ?? tv.frame.size
-        let w = max(60, used.width + 6)
-        let h = max(tv.font?.pointSize ?? 24, used.height) + 6
+        guard let tv = activeTextField, let tc = tv.textContainer, let lm = tv.layoutManager else { return }
+        let wrapW = textFixedWidth ?? max(20, bounds.width - textAnchorTopLeft.x)
+        tc.containerSize = NSSize(width: wrapW, height: .greatestFiniteMagnitude)
+        lm.ensureLayout(for: tc)
+        let used = lm.usedRect(for: tc).size
+        let lineH = lm.defaultLineHeight(for: tv.font ?? PaintState.shared.currentTextFont())
+        let w = textFixedWidth ?? max(60, ceil(used.width) + 6)
+        let h = max(textMinHeight, max(lineH, ceil(used.height)) + 4)
         tv.frame = NSRect(x: textAnchorTopLeft.x, y: textAnchorTopLeft.y - h, width: w, height: h)
+        needsDisplay = true
+    }
+
+    /// 文字框外框（虛線＋8 把手）命中測試：把手 → 縮放；框線附近 → 移動。
+    private func textBoxHit(_ p: NSPoint) -> TextBoxDrag? {
+        guard let tv = activeTextField else { return nil }
+        let f = tv.frame
+        for (h, hr) in handleRects(for: f.insetBy(dx: -textBoxPad, dy: -textBoxPad))
+            where hr.insetBy(dx: -2, dy: -2).contains(p) {
+            return .resize(h, start: f)
+        }
+        let band = max(6, 6 / max(PaintState.shared.zoom, 0.01))
+        if f.insetBy(dx: -band, dy: -band).contains(p) && !f.contains(p) {
+            return .move(start: p, origin: textAnchorTopLeft)
+        }
+        return nil
+    }
+    private var textBoxPad: CGFloat { 3 }
+
+    private func dragTextBox(_ d: TextBoxDrag, to p: NSPoint) {
+        switch d {
+        case let .move(start, origin):
+            textAnchorTopLeft = NSPoint(x: (origin.x + p.x - start.x).rounded(),
+                                        y: (origin.y + p.y - start.y).rounded())
+        case let .resize(h, startRect):
+            // 把手位於外框（文字區外擴 textBoxPad），換算回文字區
+            let pad = textBoxPad
+            let r = CanvasView.resized(startRect.insetBy(dx: -pad, dy: -pad), handle: h, to: p,
+                                       minSize: 20 + 2 * pad).insetBy(dx: pad, dy: pad)
+            textAnchorTopLeft = NSPoint(x: r.minX, y: r.maxY)
+            textFixedWidth = r.width
+            textMinHeight = r.height
+        }
+        fitTextView()
+    }
+
+    private func drawTextBoxDecoration() {
+        guard let tv = activeTextField else { return }
+        let box = tv.frame.insetBy(dx: -textBoxPad, dy: -textBoxPad)
+        let path = NSBezierPath(rect: box)
+        path.lineWidth = 1 / max(PaintState.shared.zoom, 0.01)
+        NSColor(calibratedRed: 0.2, green: 0.45, blue: 0.9, alpha: 1).setStroke()
+        path.setLineDash([3, 3], count: 2, phase: 0)
+        path.stroke()
+        for (_, hr) in handleRects(for: box) {
+            NSColor.white.setFill(); hr.fill()
+            NSColor(calibratedRed: 0.2, green: 0.45, blue: 0.9, alpha: 1).setStroke()
+            let hp = NSBezierPath(rect: hr); hp.lineWidth = path.lineWidth; hp.stroke()
+        }
     }
 
     func commitText() {
@@ -1612,13 +1751,20 @@ final class CanvasView: NSView {
         TextFormatPanel.shared.hide()
         tv.removeFromSuperview()
         activeTextField = nil
+        textBoxDrag = nil
+        needsDisplay = true
         if attr.length > 0 {
             drawInBitmap { _ in
-                attr.draw(in: frame)
+                attr.draw(with: frame, options: [.usesLineFragmentOrigin])
             }
             pushHistory()
         }
     }
+
+    // 測試用存取
+    var testTextFrame: NSRect? { activeTextField?.frame }
+    func testBeginText(at p: NSPoint) { beginText(at: p) }
+    func testTypeText(_ s: String) { activeTextField?.insertText(s, replacementRange: NSRange(location: NSNotFound, length: 0)); fitTextView() }
 
     var isEditingText: Bool { activeTextField != nil }
 

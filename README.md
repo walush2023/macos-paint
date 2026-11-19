@@ -16,7 +16,7 @@ No web view, no Electron, no external dependencies — just a single native `.ap
 
 **Paint for macOS** brings the classic Windows Paint experience to the Mac. It reproduces the Windows 7/10‑style **Ribbon** interface, the full tool set, the shape library, the color palette, and the editing workflow you remember — implemented from scratch on top of AppKit's `NSView`, `NSBitmapImageRep`, and `NSBezierPath`.
 
-The whole application is roughly **5,000 lines of Swift across 16 files**, with **55 automated tests** and a headless self‑test harness that renders the drawing engine and UI to PNG for visual verification.
+The whole application is roughly **5,000 lines of Swift across 16 files**, with **61 automated tests** and a headless self‑test harness that renders the drawing engine and UI to PNG for visual verification.
 
 > **Localized in 4 languages** — English, Traditional Chinese (繁體中文), Simplified Chinese (简体中文), and Japanese (日本語) — auto-selected from your macOS system language.
 
@@ -35,12 +35,13 @@ The whole application is roughly **5,000 lines of Swift across 16 files**, with 
 ## Features
 
 ### Tools
-- **Pencil** — crisp, non‑antialiased 1px freehand drawing
+- **Pencil** — crisp, non‑antialiased freehand drawing in **1 / 2 / 3 / 4 px**
 - **Brushes (9 styles)** — round, calligraphy 1 & 2, airbrush, oil, crayon, marker, natural pencil, watercolour, each with its own stroke algorithm
-- **Eraser** — paints with the background color (or **transparent**, erasing to real alpha)
+- **Eraser** — **4 / 6 / 8 / 10 px** square, paints with the background color (or **transparent**, erasing to real alpha); **right‑drag = colour replace** (only Color 1 pixels become Color 2)
+- The Size menu adapts to the current tool and remembers a separate size for pencil, eraser and brushes/shapes
 - **Fill with color (paint bucket)** — scanline flood fill with an adjustable **tolerance slider** (Windows 11 style): raise it to fill similar colors together
 - **Color picker (eyedropper)** — sample any pixel into Color 1 / Color 2
-- **Text** — click to type, rendered into the bitmap
+- **Text** — click to type, rendered into the bitmap; while editing, drag the dashed frame to **move** the text box or its 8 handles to **resize** it (text wraps to the box width)
 - **Magnifier** — click to zoom in (right‑click / ⌥‑click to zoom out), centred on the clicked point
 
 ### Shapes (23)

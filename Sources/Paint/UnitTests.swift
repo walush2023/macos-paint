@@ -63,6 +63,12 @@ enum UnitTests {
             ("recentFiles",        testRecentFiles),
             ("deleteKey",          testDeleteKeyRemovesSelection),
             ("escCancelsPolygon",  testEscCancelsPolygon),
+            ("sizeOptions",        testSizeOptions),
+            ("pencilSize",         testPencilSize),
+            ("eraserSize",         testEraserSize),
+            ("eraserReplace",      testEraserReplace),
+            ("textBoxMove",        testTextBoxMove),
+            ("textBoxResize",      testTextBoxResize),
         ]
         for (_, fn) in tests { fn() }
 
@@ -916,6 +922,9 @@ enum UnitTests {
         case .leftMouseDown: cv.mouseDown(with: e)
         case .leftMouseDragged: cv.mouseDragged(with: e)
         case .leftMouseUp: cv.mouseUp(with: e)
+        case .rightMouseDown: cv.rightMouseDown(with: e)
+        case .rightMouseDragged: cv.rightMouseDragged(with: e)
+        case .rightMouseUp: cv.rightMouseUp(with: e)
         default: break
         }
     }
@@ -1112,5 +1121,120 @@ enum UnitTests {
         assertTrue("polygon.cancelled", !cv.hasPendingShape)
         assertEq("polygon.noHistory", cv.history.count, n0)
         st.tool = oldTool; st.shapeKind = oldShape
+    }
+
+    // MARK: - 鉛筆/橡皮擦粗細、換色橡皮擦、文字框移動縮放
+
+    static func testSizeOptions() {
+        let st = PaintState.shared
+        let oldTool = st.tool, oldP = st.pencilSize, oldE = st.eraserSize, oldS = st.strokeSize
+        assertEq("size.pencilOpts", PaintState.sizeOptions(for: .pencil), [1, 2, 3, 4])
+        assertEq("size.eraserOpts", PaintState.sizeOptions(for: .eraser), [4, 6, 8, 10])
+        st.tool = .pencil; st.currentSize = 3
+        st.tool = .eraser; st.currentSize = 10
+        st.tool = .brush;  st.currentSize = 5
+        assertEq("size.pencilKept", st.pencilSize, 3)
+        assertEq("size.eraserKept", st.eraserSize, 10)
+        assertEq("size.strokeKept", st.strokeSize, 5)
+        st.tool = oldTool; st.pencilSize = oldP; st.eraserSize = oldE; st.strokeSize = oldS
+    }
+
+    static func testPencilSize() {
+        let st = PaintState.shared
+        let old = (st.color1, st.pencilSize); st.color1 = .black; st.pencilSize = 3
+        let cv = whiteCanvas()
+        cv.testStroke(from: NSPoint(x: 20, y: 20), to: NSPoint(x: 40, y: 20), tool: .pencil)
+        assertEq("pencil3.center", pixel(of: cv, 30, 20)!.0, 0)
+        assertEq("pencil3.up1", pixel(of: cv, 30, 21)!.0, 0)
+        assertEq("pencil3.down1", pixel(of: cv, 30, 19)!.0, 0)
+        assertEq("pencil3.up2", pixel(of: cv, 30, 22)!.0, 255)
+        assertEq("pencil3.aa", pixel(of: cv, 30, 22)!.1, 255)   // 無反鋸齒灰邊
+        st.color1 = old.0; st.pencilSize = old.1
+    }
+
+    static func testEraserSize() {
+        let st = PaintState.shared
+        let old = (st.color2, st.eraserSize); st.color2 = .white; st.eraserSize = 10
+        let cv = makeCanvas()
+        cv.resetCanvas(size: NSSize(width: 100, height: 80), fill: .black)
+        cv.testStroke(from: NSPoint(x: 50, y: 40), to: NSPoint(x: 50, y: 40), tool: .eraser)
+        assertEq("eraser10.in", pixel(of: cv, 50 + 5, 40)!.0, 255)
+        assertEq("eraser10.edge", pixel(of: cv, 50 - 4, 40)!.0, 255)
+        assertEq("eraser10.out", pixel(of: cv, 50 + 6, 40)!.0, 0)
+        assertEq("eraser10.out2", pixel(of: cv, 50 - 5, 40)!.0, 0)
+        st.color2 = old.0; st.eraserSize = old.1
+    }
+
+    static func testEraserReplace() {
+        let st = PaintState.shared
+        let old = (st.color1, st.color2, st.eraserSize, st.tool)
+        st.color1 = NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1)
+        st.color2 = NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1)
+        st.eraserSize = 10; st.tool = .eraser
+        let cv = whiteCanvas()
+        cv.drawInBitmap { _ in
+            NSColor(deviceRed: 1, green: 0, blue: 0, alpha: 1).setFill()
+            NSRect(x: 0, y: 0, width: 50, height: 80).fill()   // 左半紅、右半白
+        }
+        mouse(cv, .rightMouseDown, 40, 40)
+        mouse(cv, .rightMouseDragged, 60, 40)
+        mouse(cv, .rightMouseUp, 60, 40)
+        let red = pixel(of: cv, 45, 40)!, white = pixel(of: cv, 55, 40)!, untouched = pixel(of: cv, 10, 40)!
+        assertTrue("eraserReplace.redToBlue", red.0 == 0 && red.2 == 255)
+        assertTrue("eraserReplace.whiteKept", white.0 == 255 && white.1 == 255)
+        assertTrue("eraserReplace.outsideKept", untouched.0 == 255 && untouched.2 == 0)
+        assertTrue("eraserReplace.undoable", cv.canUndo())
+        st.color1 = old.0; st.color2 = old.1; st.eraserSize = old.2; st.tool = old.3
+    }
+
+    static func testTextBoxMove() {
+        let st = PaintState.shared
+        let oldTool = st.tool; st.tool = .text
+        let cv = whiteCanvas(300, 200)
+        cv.testBeginText(at: NSPoint(x: 50, y: 150))
+        cv.testTypeText("Hi")
+        guard let f0 = cv.testTextFrame else { failures.append("textBox.begin: no frame"); return }
+        assertEq("textBox.anchor", NSPoint(x: f0.minX, y: f0.maxY), NSPoint(x: 50, y: 150))
+        // 拖曳上方框線（框外 4px）往右下移 30,−20
+        let gx = f0.minX + f0.width * 0.25   // 避開把手的框線位置
+        mouse(cv, .leftMouseDown, gx, f0.maxY + 4)
+        mouse(cv, .leftMouseDragged, gx + 30, f0.maxY + 4 - 20)
+        mouse(cv, .leftMouseUp, gx + 30, f0.maxY + 4 - 20)
+        let f1 = cv.testTextFrame!
+        assertTrue("textBox.stillEditing", cv.isEditingText)
+        assertEq("textBox.moved", NSPoint(x: f1.minX, y: f1.maxY), NSPoint(x: 80, y: 130))
+        cv.commitText()
+        // 文字被畫在新位置（舊位置 50..60 應仍是白的）
+        var inkNew = false, inkOld = false
+        for x in 80..<120 { for y in 100..<130 { if pixel(of: cv, x, y)!.0 < 128 { inkNew = true } } }
+        for x in 50..<78 { for y in 130..<150 { if pixel(of: cv, x, y)!.0 < 128 { inkOld = true } } }
+        assertTrue("textBox.drawnAtNew", inkNew)
+        assertTrue("textBox.notAtOld", !inkOld)
+        st.tool = oldTool
+    }
+
+    static func testTextBoxResize() {
+        let st = PaintState.shared
+        let oldTool = st.tool; st.tool = .text
+        let cv = whiteCanvas(400, 300)
+        cv.testBeginText(at: NSPoint(x: 20, y: 280))
+        cv.testTypeText("hello world hello world hello world")
+        let f0 = cv.testTextFrame!
+        assertTrue("textBox.autoWidth", f0.width > 150)
+        // 拖右側把手縮窄到 80px 寬 → 自動換行、高度變大
+        let pad: CGFloat = 3
+        mouse(cv, .leftMouseDown, f0.maxX + pad, f0.midY)
+        mouse(cv, .leftMouseDragged, f0.minX + 80 + pad, f0.midY)
+        mouse(cv, .leftMouseUp, f0.minX + 80 + pad, f0.midY)
+        let f1 = cv.testTextFrame!
+        assertEq("textBox.fixedWidth", f1.width, 80)
+        assertEq("textBox.leftKept", f1.minX, f0.minX)
+        assertEq("textBox.topKept", f1.maxY, f0.maxY)
+        assertTrue("textBox.wrapsTaller", f1.height > f0.height * 1.8)
+        cv.commitText()
+        var inkRight = false
+        for x in 110..<400 { for y in 0..<300 { if pixel(of: cv, x, y)!.0 < 128 { inkRight = true } } }
+        assertTrue("textBox.wrappedInside", !inkRight)
+        st.tool = oldTool
     }
 }

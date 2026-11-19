@@ -60,7 +60,35 @@ final class PaintState {
     var shapeKind: ShapeKind = .line
     var color1: NSColor = .black       // primary (left button)
     var color2: NSColor = .white       // secondary (right button)
-    var strokeSize: CGFloat = 3
+    var strokeSize: CGFloat = 3        // 筆刷 / 圖形線寬
+    var pencilSize: CGFloat = 1        // 鉛筆粗細（像素）
+    var eraserSize: CGFloat = 8        // 橡皮擦邊長（像素）
+
+    /// 依工具提供的粗細選項（同 Windows 小畫家：鉛筆 1–4px、橡皮擦 4–10px）。
+    static func sizeOptions(for tool: Tool) -> [CGFloat] {
+        switch tool {
+        case .pencil: return [1, 2, 3, 4]
+        case .eraser: return [4, 6, 8, 10]
+        default:      return [1, 3, 5, 8]
+        }
+    }
+    /// 目前工具的粗細（讀寫會導向對應的屬性）。
+    var currentSize: CGFloat {
+        get {
+            switch tool {
+            case .pencil: return pencilSize
+            case .eraser: return eraserSize
+            default:      return strokeSize
+            }
+        }
+        set {
+            switch tool {
+            case .pencil: pencilSize = newValue
+            case .eraser: eraserSize = newValue
+            default:      strokeSize = newValue
+            }
+        }
+    }
     var outlineStyle: FillStyle = .solid   // shape outline
     var fillStyle: FillStyle = .none       // shape fill
     var fillTolerance: Double = 0          // 油漆桶容許度 0–100%（0=完全相同色才填）

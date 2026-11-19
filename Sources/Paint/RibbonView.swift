@@ -630,16 +630,19 @@ final class RibbonView: NSView {
 
     private func showSizeMenu(from sender: NSButton) {
         let m = NSMenu()
-        for (i, s) in [CGFloat(1), 3, 5, 8].enumerated() {
-            let item = NSMenuItem(title: String(repeating: "▬", count: i + 1), action: #selector(sizeChosen(_:)), keyEquivalent: "")
+        let st = PaintState.shared
+        for (i, s) in PaintState.sizeOptions(for: st.tool).enumerated() {
+            let item = NSMenuItem(title: String(repeating: "▬", count: i + 1) + "  \(Int(s)) px",
+                                  action: #selector(sizeChosen(_:)), keyEquivalent: "")
             item.tag = Int(s)
             item.target = self
+            item.state = st.currentSize == s ? .on : .off
             m.addItem(item)
         }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.frame.height), in: sender)
     }
     @objc private func sizeChosen(_ sender: NSMenuItem) {
-        PaintState.shared.strokeSize = CGFloat(sender.tag)
+        PaintState.shared.currentSize = CGFloat(sender.tag)
         NotificationCenter.default.post(name: PaintState.sizeChanged, object: nil)
     }
 
