@@ -17,6 +17,11 @@ if let i = args.firstIndex(of: "--tool"), i + 1 < args.count {
     if let t = Tool(rawValue: args[i + 1]) { PaintState.shared.tool = t }
     args.removeSubrange(i...(i + 1))
 }
+// 預覽用：--rulers 預先開啟尺規
+if let i = args.firstIndex(of: "--rulers") {
+    PaintState.shared.showRulers = true
+    args.remove(at: i)
+}
 if args.count >= 3, args[1] == "--test" {
     // Headless self-test mode：跑過所有繪製路徑，匯出 PNG
     let ok = SelfTest.run(outputPath: args[2])

@@ -7,8 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyAppIcon()
-        setupMainMenu()
         windowController = MainWindowController()
+        setupMainMenu()   // 需在 windowController 建立後（最近檔案選單的 delegate）
         windowController.showWindow(nil)
         // 處理啟動時由 Finder「開啟」帶入的檔案
         if let url = pendingOpenURLs.first {
@@ -47,6 +47,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    /// ⌘Q：有未儲存的變更時先詢問。
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let wc = windowController, wc.isDirty, wc.window?.isVisible == true else { return .terminateNow }
+        wc.confirmDiscardIfNeeded { proceed in
+            if proceed { wc.isDirty = false }
+            NSApp.reply(toApplicationShouldTerminate: proceed)
+        }
+        return .terminateLater
+    }
+
     private func setupMainMenu() {
         let mainMenu = NSMenu()
 
@@ -64,6 +74,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fileMenu = NSMenu(title: tr("檔案"))
         fileMenu.addItem(NSMenuItem(title: tr("新增"), action: #selector(MainWindowController.newDocument(_:)), keyEquivalent: "n"))
         fileMenu.addItem(NSMenuItem(title: tr("開啟…"), action: #selector(MainWindowController.openDocument(_:)), keyEquivalent: "o"))
+        let recentItem = NSMenuItem(title: tr("最近開啟的檔案"), action: nil, keyEquivalent: "")
+        let recentMenu = NSMenu(title: tr("最近開啟的檔案"))
+        recentMenu.delegate = windowController   // menuNeedsUpdate 時重建
+        recentItem.submenu = recentMenu
+        fileMenu.addItem(recentItem)
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(NSMenuItem(title: tr("關閉"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
         fileMenu.addItem(NSMenuItem(title: tr("儲存"), action: #selector(MainWindowController.saveDocument(_:)), keyEquivalent: "s"))
         let saveAs = NSMenuItem(title: tr("另存新檔…"), action: #selector(MainWindowController.saveAsDocument(_:)), keyEquivalent: "S")
         saveAs.keyEquivalentModifierMask = [.command, .shift]
@@ -88,21 +105,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(NSMenuItem(title: tr("貼上"), action: Selector("paste:"), keyEquivalent: "v"))
         editMenu.addItem(NSMenuItem(title: tr("全選"), action: Selector("selectAll:"), keyEquivalent: "a"))
         editMenu.addItem(NSMenuItem(title: tr("刪除"), action: #selector(MainWindowController.deleteSelection(_:)), keyEquivalent: "\u{8}"))
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(NSMenuItem(title: tr("透明選取"), action: #selector(MainWindowController.toggleTransparentSelection(_:)), keyEquivalent: ""))
         editItem.submenu = editMenu
         mainMenu.addItem(editItem)
 
         // View menu
         let viewItem = NSMenuItem()
         let viewMenu = NSMenu(title: tr("檢視"))
-        viewMenu.addItem(NSMenuItem(title: tr("放大"), action: #selector(MainWindowController.zoomIn(_:)), keyEquivalent: "+"))
+        viewMenu.addItem(NSMenuItem(title: tr("放大"), action: #selector(MainWindowController.zoomIn(_:)), keyEquivalent: "="))
+        // ⌘+（需 Shift）也能放大：隱藏但保留快捷鍵
+        let zoomInAlt = NSMenuItem(title: tr("放大"), action: #selector(MainWindowController.zoomIn(_:)), keyEquivalent: "+")
+        zoomInAlt.isHidden = true
+        zoomInAlt.allowsKeyEquivalentWhenHidden = true
+        viewMenu.addItem(zoomInAlt)
         viewMenu.addItem(NSMenuItem(title: tr("縮小"), action: #selector(MainWindowController.zoomOut(_:)), keyEquivalent: "-"))
         viewMenu.addItem(NSMenuItem(title: "100%", action: #selector(MainWindowController.zoom100(_:)), keyEquivalent: "0"))
+        viewMenu.addItem(NSMenuItem(title: tr("符合視窗"), action: #selector(MainWindowController.zoomToFit(_:)), keyEquivalent: "9"))
         viewMenu.addItem(NSMenuItem.separator())
         viewMenu.addItem(NSMenuItem(title: tr("格線"), action: #selector(MainWindowController.toggleGridlines(_:)), keyEquivalent: "g"))
         viewMenu.addItem(NSMenuItem(title: tr("尺規"), action: #selector(MainWindowController.toggleRulers(_:)), keyEquivalent: "r"))
         viewMenu.addItem(NSMenuItem(title: tr("狀態列"), action: #selector(MainWindowController.toggleStatusBar(_:)), keyEquivalent: ""))
         viewMenu.addItem(NSMenuItem.separator())
-        viewMenu.addItem(NSMenuItem(title: tr("全螢幕"), action: #selector(MainWindowController.toggleFullScreen(_:)), keyEquivalent: "f"))
+        let fs = NSMenuItem(title: tr("全螢幕"), action: #selector(MainWindowController.toggleFullScreen(_:)), keyEquivalent: "f")
+        fs.keyEquivalentModifierMask = [.command, .control]   // macOS 標準 ⌃⌘F
+        viewMenu.addItem(fs)
         viewItem.submenu = viewMenu
         mainMenu.addItem(viewItem)
 
@@ -117,6 +144,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         imageMenu.addItem(NSMenuItem(title: tr("旋轉 180°"), action: #selector(MainWindowController.rotate180(_:)), keyEquivalent: ""))
         imageMenu.addItem(NSMenuItem(title: tr("水平翻轉"), action: #selector(MainWindowController.flipHorizontal(_:)), keyEquivalent: ""))
         imageMenu.addItem(NSMenuItem(title: tr("垂直翻轉"), action: #selector(MainWindowController.flipVertical(_:)), keyEquivalent: ""))
+        imageMenu.addItem(NSMenuItem.separator())
+        let invert = NSMenuItem(title: tr("反轉色彩"), action: #selector(MainWindowController.invertColors(_:)), keyEquivalent: "i")
+        invert.keyEquivalentModifierMask = [.command, .shift]
+        imageMenu.addItem(invert)
+        let clearImg = NSMenuItem(title: tr("清除影像"), action: #selector(MainWindowController.clearImage(_:)), keyEquivalent: "n")
+        clearImg.keyEquivalentModifierMask = [.command, .shift]
+        imageMenu.addItem(clearImg)
         imageItem.submenu = imageMenu
         mainMenu.addItem(imageItem)
 

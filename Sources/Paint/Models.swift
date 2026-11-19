@@ -103,6 +103,10 @@ final class PaintState {
     static let statusUpdate  = Notification.Name("paint.statusUpdate")
     static let toleranceChanged = Notification.Name("paint.toleranceChanged")
     static let textFormatChanged = Notification.Name("paint.textFormatChanged")
+    /// 畫布內容被修改（寫入歷史 / 復原 / 重做）→ 文件標記為已修改。
+    static let documentEdited = Notification.Name("paint.documentEdited")
+    /// 選取範圍改變（userInfo: "w","h"；無選取時不帶）。
+    static let selectionChanged = Notification.Name("paint.selectionChanged")
 }
 
 // MARK: - Standard Palette (Windows Paint colors)
@@ -142,20 +146,25 @@ enum Palette {
 
 final class History {
     static let maxSize = 50
+    /// 歷史快照總記憶體上限（大圖時避免 50 張全尺寸快照吃掉數 GB）。
+    static var maxBytes = 768 * 1024 * 1024
     private var stack: [NSBitmapImageRep] = []
     private var head: Int = -1  // current snapshot index
+
+    var count: Int { stack.count }
+    var totalBytes: Int { stack.reduce(0) { $0 + $1.bytesPerRow * $1.pixelsHigh } }
 
     func push(_ snapshot: NSBitmapImageRep) {
         if head < stack.count - 1 {
             stack.removeSubrange((head + 1)...)
         }
         stack.append(snapshot)
-        if stack.count > History.maxSize {
+        head = stack.count - 1
+        // 超過張數或記憶體上限 → 丟掉最舊的（至少保留目前這張）
+        while stack.count > History.maxSize || (stack.count > 1 && totalBytes > History.maxBytes) {
             stack.removeFirst()
-        } else {
-            head += 1
+            head -= 1
         }
-        if head >= stack.count { head = stack.count - 1 }
     }
 
     func canUndo() -> Bool { head > 0 }

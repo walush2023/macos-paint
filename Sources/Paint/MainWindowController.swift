@@ -1,12 +1,15 @@
 import AppKit
 import UniformTypeIdentifiers
 
-final class MainWindowController: NSWindowController {
+final class MainWindowController: NSWindowController, NSWindowDelegate, NSMenuDelegate {
     let canvas = CanvasView(size: NSSize(width: 800, height: 600))
     let ribbon = RibbonView()
     let statusBar = StatusBarView()
     let scrollView = NSScrollView()
     let tabBar = TabBarView()
+    let hRuler = CanvasRulerView(orientation: .horizontal)
+    let vRuler = CanvasRulerView(orientation: .vertical)
+    private let rulerThickness: CGFloat = 20
     var currentFileURL: URL?
     var isDirty: Bool = false
 
@@ -32,13 +35,20 @@ final class MainWindowController: NSWindowController {
         // 強制使用淺色外觀以對齊 Windows 小畫家視覺、避免深色模式下標籤變白看不清
         win.appearance = NSAppearance(named: .aqua)
         super.init(window: win)
+        win.delegate = self
         buildLayout()
 
         let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(handleZoomChanged), name: PaintState.zoomChanged, object: nil)
+        nc.addObserver(self, selector: #selector(handleZoomChanged(_:)), name: PaintState.zoomChanged, object: nil)
         nc.addObserver(self, selector: #selector(handleCanvasResized), name: PaintState.canvasResized, object: nil)
         nc.addObserver(self, selector: #selector(handleViewChanged), name: PaintState.viewChanged, object: nil)
         nc.addObserver(self, selector: #selector(handleStatusUpdate(_:)), name: PaintState.statusUpdate, object: nil)
+        nc.addObserver(self, selector: #selector(handleDocumentEdited(_:)), name: PaintState.documentEdited, object: canvas)
+        nc.addObserver(self, selector: #selector(handleSelectionChanged(_:)), name: PaintState.selectionChanged, object: canvas)
+        nc.addObserver(self, selector: #selector(handleScrolled), name: NSView.boundsDidChangeNotification,
+                       object: scrollView.contentView)
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        handleViewChanged()
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -80,6 +90,13 @@ final class MainWindowController: NSWindowController {
         scrollView.backgroundColor = NSColor(calibratedRed: 0.6, green: 0.74, blue: 0.93, alpha: 1)
         scrollView.drawsBackground = true
         content.addSubview(scrollView)
+
+        // 尺規（以畫布像素為單位，原點在畫布左上角）
+        for r in [hRuler, vRuler] {
+            r.canvas = canvas
+            r.isHidden = true
+            content.addSubview(r)
+        }
 
         let docView = NSView(frame: NSRect(x: 0, y: 0, width: max(840, scrollView.contentSize.width),
                                             height: max(640, scrollView.contentSize.height)))
@@ -176,6 +193,8 @@ final class MainWindowController: NSWindowController {
     private func updateTitle() {
         let base = currentFileURL?.lastPathComponent ?? tr("未命名")
         window?.title = "\(base)\(isDirty ? " *" : "") - \(tr("小畫家"))"
+        window?.isDocumentEdited = isDirty
+        window?.representedURL = currentFileURL
     }
 
     private let canvasMargin: CGFloat = 10
@@ -199,6 +218,7 @@ final class MainWindowController: NSWindowController {
         canvas.setBoundsSize(NSSize(width: pxW, height: pxH))
         canvas.needsDisplay = true
         layoutResizeHandles()
+        refreshRulers()
     }
 
     private func layoutResizeHandles() {
@@ -209,14 +229,74 @@ final class MainWindowController: NSWindowController {
         cornerHandle?.frame = NSRect(x: f.maxX - 1, y: f.minY - 7, width: 8, height: 8)
     }
 
-    @objc private func handleZoomChanged() { layoutDocument() }
-    @objc private func handleCanvasResized() { layoutDocument() }
+    @objc private func handleZoomChanged(_ n: Notification) {
+        // 縮放前記住錨點（畫布像素）在畫面上的位置，縮放後維持在同一處
+        let anchor = (n.userInfo?["anchor"] as? NSValue)?.pointValue
+        var anchorInClip: NSPoint?
+        if let a = anchor {
+            let docPt = canvas.convert(a, to: scrollView.documentView)
+            let origin = scrollView.contentView.bounds.origin
+            anchorInClip = NSPoint(x: docPt.x - origin.x, y: docPt.y - origin.y)
+        }
+        layoutDocument()
+        if let a = anchor, let inClip = anchorInClip, let doc = scrollView.documentView {
+            let docPt = canvas.convert(a, to: doc)
+            let clip = scrollView.contentView
+            var o = NSPoint(x: docPt.x - inClip.x, y: docPt.y - inClip.y)
+            o.x = max(0, min(doc.frame.width - clip.bounds.width, o.x))
+            o.y = max(0, min(doc.frame.height - clip.bounds.height, o.y))
+            clip.scroll(to: o)
+            scrollView.reflectScrolledClipView(clip)
+        }
+        refreshRulers()
+    }
+    @objc private func handleCanvasResized() {
+        layoutDocument()
+        statusBar.updateCanvasSize(PaintState.shared.canvasSize)
+    }
     @objc private func handleViewChanged() {
         statusBar.isHidden = !PaintState.shared.showStatusBar
+        layoutWorkspace()
+        canvas.needsDisplay = true   // 格線切換（ribbon 勾選框也走這條）
+    }
+    @objc private func handleScrolled() { refreshRulers() }
+    private func refreshRulers() {
+        hRuler.needsDisplay = true
+        vRuler.needsDisplay = true
+    }
+
+    /// 依尺規/狀態列是否顯示，重新排列工作區（捲動區）大小。
+    private func layoutWorkspace() {
+        guard let content = window?.contentView else { return }
+        let showR = PaintState.shared.showRulers
+        let bottom: CGFloat = PaintState.shared.showStatusBar ? statusBarHeight : 0
+        let top = content.bounds.height - tabBarHeight - ribbonHeight
+        let t: CGFloat = showR ? rulerThickness : 0
+        scrollView.frame = NSRect(x: t, y: bottom, width: content.bounds.width - t, height: top - bottom - t)
+        hRuler.isHidden = !showR
+        vRuler.isHidden = !showR
+        hRuler.frame = NSRect(x: t, y: top - t, width: content.bounds.width - t, height: t)
+        hRuler.autoresizingMask = [.width, .minYMargin]
+        vRuler.frame = NSRect(x: 0, y: bottom, width: t, height: top - bottom - t)
+        vRuler.autoresizingMask = [.height]
+        layoutDocument()
+        refreshRulers()
+    }
+
+    @objc private func handleDocumentEdited(_ n: Notification) { markDirty() }
+    @objc private func handleSelectionChanged(_ n: Notification) {
+        let info = n.userInfo
+        if let w = info?["w"] as? Int, let h = info?["h"] as? Int {
+            statusBar.updateSelection(NSSize(width: w, height: h))
+        } else {
+            statusBar.updateSelection(nil)
+        }
     }
     @objc private func handleStatusUpdate(_ n: Notification) {
         if let info = n.userInfo, let x = info["x"] as? Int, let y = info["y"] as? Int {
             statusBar.update(x: x, y: y, canvasSize: PaintState.shared.canvasSize)
+            hRuler.marker = CGFloat(x)
+            vRuler.marker = CGFloat(y)
         }
     }
 
@@ -225,10 +305,13 @@ final class MainWindowController: NSWindowController {
     @objc func newDocument(_ sender: Any?) {
         confirmDiscardIfNeeded { [weak self] proceed in
             guard let self = self, proceed else { return }
+            self.canvas.cancelPendingShape()
+            self.canvas.commitText()
             self.canvas.resetCanvas(size: NSSize(width: 800, height: 600))
             self.currentFileURL = nil
             self.isDirty = false
             self.updateTitle()
+            self.layoutDocument()
         }
     }
 
@@ -253,21 +336,32 @@ final class MainWindowController: NSWindowController {
     /// 由 Finder 開檔 / 開啟方式 / 拖到 Dock，載入指定圖檔。
     func openImageFile(_ url: URL) {
         confirmDiscardIfNeeded { [weak self] proceed in
-            guard let self = self, proceed, let img = NSImage(contentsOf: url) else { return }
+            guard let self = self, proceed else { return }
+            guard let img = NSImage(contentsOf: url), img.isValid else {
+                self.showError(trf("無法開啟「%@」：不是支援的影像格式。", url.lastPathComponent))
+                RecentFiles.remove(url)
+                return
+            }
+            self.canvas.cancelPendingShape()
+            self.canvas.commitText()
             self.canvas.loadImage(img)
             self.currentFileURL = url
             self.isDirty = false
             self.updateTitle()
             self.layoutDocument()
+            RecentFiles.add(url)
         }
     }
 
-    @objc func saveDocument(_ sender: Any?) {
+    @objc func saveDocument(_ sender: Any?) { _ = performSave() }
+
+    /// 儲存；回傳是否真的存檔成功（另存視窗按取消 / 寫入失敗 → false）。
+    @discardableResult
+    func performSave() -> Bool {
         if let url = currentFileURL {
-            saveTo(url: url)
-        } else {
-            saveAsDocument(sender)
+            return saveTo(url: url)
         }
+        return performSaveAs()
     }
 
     private struct SaveFormat {
@@ -284,7 +378,10 @@ final class MainWindowController: NSWindowController {
         SaveFormat(name: "TIFF", type: .tiff, ut: .tiff, ext: "tiff"),
     ]
 
-    @objc func saveAsDocument(_ sender: Any?) {
+    @objc func saveAsDocument(_ sender: Any?) { _ = performSaveAs() }
+
+    @discardableResult
+    func performSaveAs() -> Bool {
         let panel = NSSavePanel()
 
         // 起始格式：沿用現有副檔名，否則 PNG
@@ -316,17 +413,22 @@ final class MainWindowController: NSWindowController {
         popup.action = #selector(SavePanelFormatHandler.changed(_:))
         applyFormat()
 
+        var ok = false
         if panel.runModal() == .OK, let url = panel.url {
             let f = saveFormats[popup.indexOfSelectedItem]
-            saveTo(url: url, type: f.type)
-            currentFileURL = url
-            isDirty = false
-            updateTitle()
+            if saveTo(url: url, type: f.type) {
+                currentFileURL = url
+                isDirty = false
+                updateTitle()
+                ok = true
+            }
         }
-        _ = handler   // 保活至 modal 結束
+        withExtendedLifetime(handler) {}   // 保活至 modal 結束
+        return ok
     }
 
-    private func saveTo(url: URL, type explicitType: NSBitmapImageRep.FileType? = nil) {
+    @discardableResult
+    private func saveTo(url: URL, type explicitType: NSBitmapImageRep.FileType? = nil) -> Bool {
         let type: NSBitmapImageRep.FileType
         if let t = explicitType {
             type = t
@@ -339,10 +441,31 @@ final class MainWindowController: NSWindowController {
             default:            type = .png
             }
         }
-        if let data = canvas.exportData(fileType: type) {
-            try? data.write(to: url)
-            isDirty = false
-            updateTitle()
+        guard let data = canvas.exportData(fileType: type) else {
+            showError(trf("無法儲存「%@」。", url.lastPathComponent))
+            return false
+        }
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            showError(trf("無法儲存「%@」。", url.lastPathComponent) + "\n" + error.localizedDescription)
+            return false
+        }
+        isDirty = false
+        updateTitle()
+        RecentFiles.add(url)
+        return true
+    }
+
+    private func showError(_ msg: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = msg
+        alert.addButton(withTitle: tr("確定"))
+        if let win = window, win.isVisible, win.attachedSheet == nil {
+            alert.beginSheetModal(for: win, completionHandler: nil)
+        } else {
+            alert.runModal()
         }
     }
 
@@ -365,8 +488,15 @@ final class MainWindowController: NSWindowController {
 
     // MARK: - Edit actions (override NSResponder standard actions)
 
-    @objc func undoAction(_ sender: Any?) { canvas.undo(); markDirty() }
-    @objc func redoAction(_ sender: Any?) { canvas.redo(); markDirty() }
+    @objc func undoAction(_ sender: Any?) {
+        // 編輯文字中 → 復原文字輸入，而非畫布
+        if canvas.isEditingText, let um = window?.firstResponder?.undoManager, um.canUndo { um.undo(); return }
+        canvas.undo()
+    }
+    @objc func redoAction(_ sender: Any?) {
+        if canvas.isEditingText, let um = window?.firstResponder?.undoManager, um.canRedo { um.redo(); return }
+        canvas.redo()
+    }
 
     @objc func cut(_ sender: Any?) {
         if let img = canvas.cutSelection() {
@@ -389,7 +519,11 @@ final class MainWindowController: NSWindowController {
     @objc override func selectAll(_ sender: Any?) { canvas.selectAll() }
     @objc func deleteSelection(_ sender: Any?) {
         _ = canvas.cutSelection()
-        markDirty()
+    }
+    @objc func invertColors(_ sender: Any?) { canvas.invertColors() }
+    @objc func clearImage(_ sender: Any?) { canvas.clearImage() }
+    @objc func toggleTransparentSelection(_ sender: Any?) {
+        PaintState.shared.transparentSelection.toggle()
     }
 
     private func writeImageToPasteboard(_ img: NSImage) {
@@ -418,23 +552,36 @@ final class MainWindowController: NSWindowController {
     // MARK: - View
 
     // 檢視頁的放大/縮小 與 右下角 +/- 使用相同的 25% 步進邏輯
+    /// 目前可見範圍中心（畫布像素座標），縮放時以此為錨點。
+    private func visibleCenterInCanvas() -> NSPoint {
+        let clip = scrollView.contentView
+        let c = NSPoint(x: clip.bounds.midX, y: clip.bounds.midY)
+        let p = canvas.convert(c, from: clip)
+        return NSPoint(x: max(0, min(canvas.bounds.width, p.x)), y: max(0, min(canvas.bounds.height, p.y)))
+    }
     @objc func zoomIn(_ sender: Any?) {
         let pct = StatusBarView.nextZoomPct(from: Double(PaintState.shared.zoom * 100), up: true)
-        PaintState.shared.zoom = CGFloat(pct / 100.0)
-        NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
+        canvas.setZoom(CGFloat(pct / 100.0), anchor: visibleCenterInCanvas())
     }
     @objc func zoomOut(_ sender: Any?) {
         let pct = StatusBarView.nextZoomPct(from: Double(PaintState.shared.zoom * 100), up: false)
-        PaintState.shared.zoom = CGFloat(pct / 100.0)
-        NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
+        canvas.setZoom(CGFloat(pct / 100.0), anchor: visibleCenterInCanvas())
     }
     @objc func zoom100(_ sender: Any?) {
-        PaintState.shared.zoom = 1.0
-        NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
+        canvas.setZoom(1.0, anchor: visibleCenterInCanvas())
+    }
+    /// 符合視窗：讓整張畫布剛好放進可見區域。
+    @objc func zoomToFit(_ sender: Any?) {
+        let cs = scrollView.contentSize
+        let pad = canvasMargin * 2 + 24
+        let z = min((cs.width - pad) / CGFloat(canvas.bitmap.pixelsWide),
+                    (cs.height - pad) / CGFloat(canvas.bitmap.pixelsHigh))
+        canvas.setZoom(max(0.25, min(8.0, z)), anchor: nil)
+        scrollView.contentView.scroll(to: .zero)
     }
     @objc func toggleGridlines(_ sender: Any?) {
         PaintState.shared.showGridlines.toggle()
-        canvas.needsDisplay = true
+        NotificationCenter.default.post(name: PaintState.viewChanged, object: nil)
     }
     @objc func toggleRulers(_ sender: Any?) {
         PaintState.shared.showRulers.toggle()
@@ -448,15 +595,80 @@ final class MainWindowController: NSWindowController {
         window?.toggleFullScreen(nil)
     }
 
+    // MARK: - 關閉視窗前確認
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard isDirty else { return true }
+        confirmDiscardIfNeeded { [weak self] proceed in
+            guard let self = self, proceed else { return }
+            self.isDirty = false
+            self.window?.close()
+        }
+        return false
+    }
+
+    // MARK: - 選單狀態
+
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case #selector(undoAction(_:)):
+            return canvas.canUndo() || canvas.selectionImage != nil || canvas.isEditingText
+        case #selector(redoAction(_:)):
+            return canvas.canRedo() || canvas.isEditingText
+        case #selector(cut(_:)), #selector(deleteSelection(_:)), #selector(cropImage(_:)):
+            return canvas.selectionRect != nil
+        case #selector(toggleGridlines(_:)):
+            item.state = PaintState.shared.showGridlines ? .on : .off
+        case #selector(toggleRulers(_:)):
+            item.state = PaintState.shared.showRulers ? .on : .off
+        case #selector(toggleStatusBar(_:)):
+            item.state = PaintState.shared.showStatusBar ? .on : .off
+        case #selector(toggleTransparentSelection(_:)):
+            item.state = PaintState.shared.transparentSelection ? .on : .off
+        default: break
+        }
+        return true
+    }
+
+    // MARK: - 最近開啟的檔案
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let urls = RecentFiles.urls
+        for url in urls {
+            let it = NSMenuItem(title: url.lastPathComponent, action: #selector(openRecent(_:)), keyEquivalent: "")
+            it.representedObject = url
+            it.target = self
+            it.toolTip = url.path
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            icon.size = NSSize(width: 16, height: 16)
+            it.image = icon
+            menu.addItem(it)
+        }
+        if !urls.isEmpty { menu.addItem(.separator()) }
+        let clear = NSMenuItem(title: tr("清除選單"), action: #selector(clearRecent(_:)), keyEquivalent: "")
+        clear.target = self
+        clear.isEnabled = !urls.isEmpty
+        menu.addItem(clear)
+    }
+    @objc func openRecent(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        openImageFile(url)
+    }
+    @objc func clearRecent(_ sender: Any?) { RecentFiles.clear() }
+
     // MARK: - Helpers
 
     private func markDirty() {
         isDirty = true
         updateTitle()
+        window?.isDocumentEdited = true
     }
 
-    private func confirmDiscardIfNeeded(_ completion: @escaping (Bool) -> Void) {
+    func confirmDiscardIfNeeded(_ completion: @escaping (Bool) -> Void) {
+        canvas.commitText()
         guard isDirty, let win = window else { completion(true); return }
+        if win.attachedSheet != nil { completion(false); return }   // 已有提示視窗
         let alert = NSAlert()
         alert.messageText = trf("您要儲存對 %@ 的變更嗎？", currentFileURL?.lastPathComponent ?? tr("未命名"))
         alert.addButton(withTitle: tr("儲存"))
@@ -465,8 +677,8 @@ final class MainWindowController: NSWindowController {
         alert.beginSheetModal(for: win) { [weak self] response in
             switch response {
             case .alertFirstButtonReturn:
-                self?.saveDocument(nil)
-                completion(true)
+                // 存檔失敗或另存視窗按取消 → 不要丟掉內容
+                completion(self?.performSave() ?? false)
             case .alertSecondButtonReturn:
                 completion(true)
             default:
@@ -485,6 +697,7 @@ final class StatusBarView: NSView {
 
     private let posLabel = NSTextField(labelWithString: "📐 0, 0 px")
     private let sizeLabel = NSTextField(labelWithString: "⤢ 800 × 600 px")
+    private let selLabel = NSTextField(labelWithString: "")
     private let zoomLabel = NSTextField(labelWithString: "100%")
     private let zoomSlider = NSSlider(value: 100, minValue: zoomMin, maxValue: zoomMax, target: nil, action: nil)
     private let minusBtn = NSButton()
@@ -494,7 +707,7 @@ final class StatusBarView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor(calibratedWhite: 0.9, alpha: 1).cgColor
-        for lbl in [posLabel, sizeLabel, zoomLabel] {
+        for lbl in [posLabel, sizeLabel, selLabel, zoomLabel] {
             lbl.font = NSFont.systemFont(ofSize: 11)
             lbl.textColor = NSColor.black
             lbl.drawsBackground = false
@@ -546,6 +759,7 @@ final class StatusBarView: NSView {
         super.layout()
         posLabel.frame = NSRect(x: 8, y: 4, width: 130, height: 18)
         sizeLabel.frame = NSRect(x: 150, y: 4, width: 150, height: 18)
+        selLabel.frame = NSRect(x: 310, y: 4, width: 150, height: 18)
         // 右側：[−] [====slider====] [+]  100%
         let labelW: CGFloat = 52
         let btnW: CGFloat = 26
@@ -561,6 +775,16 @@ final class StatusBarView: NSView {
         minusBtn.frame = NSRect(x: x, y: 2, width: btnW, height: 20)
     }
 
+    /// 選取範圍大小（nil = 無選取）。
+    func updateSelection(_ size: NSSize?) {
+        if let s = size { selLabel.stringValue = "⬚ \(Int(s.width)) × \(Int(s.height)) px" }
+        else { selLabel.stringValue = "" }
+    }
+    var selectionText: String { selLabel.stringValue }
+    func updateCanvasSize(_ s: NSSize) {
+        sizeLabel.stringValue = "⤢ \(Int(s.width)) × \(Int(s.height)) px"
+    }
+
     func update(x: Int, y: Int, canvasSize: NSSize) {
         posLabel.stringValue = "📐 \(x), \(y) px"
         sizeLabel.stringValue = "⤢ \(Int(canvasSize.width)) × \(Int(canvasSize.height)) px"
@@ -569,8 +793,7 @@ final class StatusBarView: NSView {
     }
 
     @objc private func zoomChanged(_ sender: NSSlider) {
-        PaintState.shared.zoom = CGFloat(sender.doubleValue / 100.0)
-        NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
+        applyZoomPct(sender.doubleValue)
     }
 
     /// 從目前百分比，以 25% 為單位跳到下一個整數倍（up=true 放大）。純函式，方便測試。

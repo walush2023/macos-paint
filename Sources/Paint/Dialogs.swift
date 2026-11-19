@@ -67,18 +67,47 @@ enum ResizeDialog {
         aspect.state = .on
         stack.addArrangedSubview(aspect)
 
+        // 維持外觀比例：改寬自動算高、改高自動算寬（原本勾選框沒有作用）
+        let linker = AspectLinker(original: currentSize, width: wFld, height: hFld, aspect: aspect)
+        wFld.delegate = linker
+        hFld.delegate = linker
+
         alert.accessoryView = stack
         alert.addButton(withTitle: tr("確定"))
         alert.addButton(withTitle: tr("取消"))
 
         alert.beginSheetModal(for: parent) { resp in
+            withExtendedLifetime(linker) {}
             if resp == .alertFirstButtonReturn {
-                let w = max(1, Int(wFld.stringValue) ?? Int(currentSize.width))
-                let h = max(1, Int(hFld.stringValue) ?? Int(currentSize.height))
+                let maxD = Int(CanvasView.maxDimension)
+                let w = min(maxD, max(1, Int(wFld.stringValue) ?? Int(currentSize.width)))
+                let h = min(maxD, max(1, Int(hFld.stringValue) ?? Int(currentSize.height)))
                 completion(NSSize(width: w, height: h))
             } else {
                 completion(nil)
             }
+        }
+    }
+}
+
+/// 重新調整大小對話框：寬高連動（維持外觀比例）。
+final class AspectLinker: NSObject, NSTextFieldDelegate {
+    let original: NSSize
+    let width: NSTextField, height: NSTextField, aspect: NSButton
+    init(original: NSSize, width: NSTextField, height: NSTextField, aspect: NSButton) {
+        self.original = original; self.width = width; self.height = height; self.aspect = aspect
+    }
+    /// 純函式（方便測試）：依比例由一邊算另一邊。
+    static func linked(_ v: Int, from: CGFloat, to: CGFloat) -> Int {
+        guard from > 0 else { return v }
+        return max(1, Int((CGFloat(v) * to / from).rounded()))
+    }
+    func controlTextDidChange(_ obj: Notification) {
+        guard aspect.state == .on, let f = obj.object as? NSTextField, let v = Int(f.stringValue), v > 0 else { return }
+        if f === width {
+            height.stringValue = String(AspectLinker.linked(v, from: original.width, to: original.height))
+        } else if f === height {
+            width.stringValue = String(AspectLinker.linked(v, from: original.height, to: original.width))
         }
     }
 }

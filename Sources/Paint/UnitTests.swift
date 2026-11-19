@@ -48,6 +48,21 @@ enum UnitTests {
             ("textRender",         testTextRendersToBitmap),
             ("textFont",           testCurrentTextFont),
             ("crosshairArms",      testCrosshairAllArms),
+            ("dirtyNotification",  testDocumentEditedNotification),
+            ("selMoveColors",      testSelectionMovePreservesColors),
+            ("selFractionalSnap",  testSelectionFractionalMoveSnaps),
+            ("curveCompletes",     testCurveToolCompletes),
+            ("shiftConstrain",     testShiftConstrain),
+            ("jpegFlatten",        testJPEGFlattensTransparency),
+            ("rotateKeepsAlpha",   testRotateKeepsAlpha),
+            ("historyMemCap",      testHistoryMemoryCap),
+            ("transparentSel",     testTransparentSelection),
+            ("invertColors",       testInvertColors),
+            ("aspectLinker",       testAspectLinker),
+            ("pencilCrisp",        testPencilCrisp),
+            ("recentFiles",        testRecentFiles),
+            ("deleteKey",          testDeleteKeyRemovesSelection),
+            ("escCancelsPolygon",  testEscCancelsPolygon),
         ]
         for (_, fn) in tests { fn() }
 
@@ -542,11 +557,7 @@ enum UnitTests {
         cv.pushHistory()
 
         // 第二張圖：30x30 藍
-        let blue = NSImage(size: NSSize(width: 30, height: 30))
-        blue.lockFocus()
-        NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1).setFill()
-        NSRect(x: 0, y: 0, width: 30, height: 30).fill()
-        blue.unlockFocus()
+        let blue = solidImage(30, 30, NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1))
 
         // 疊在中央 (50,40)
         cv.overlayImage(blue, at: NSPoint(x: 50, y: 40))
@@ -597,9 +608,7 @@ enum UnitTests {
             NSRect(x: 0, y: 0, width: 100, height: 80).fill()
         }
         cv.pushHistory()
-        let blue = NSImage(size: NSSize(width: 30, height: 30))
-        blue.lockFocus(); NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1).setFill()
-        NSRect(x: 0, y: 0, width: 30, height: 30).fill(); blue.unlockFocus()
+        let blue = solidImage(30, 30, NSColor(deviceRed: 0, green: 0, blue: 1, alpha: 1))
         cv.overlayImage(blue, at: NSPoint(x: 50, y: 40))
         cv.commitSelection()
         assertEq("undoOverlay.committed.blue", pixel(of: cv, 50, 40)!.2, 255)
@@ -702,10 +711,17 @@ enum UnitTests {
         return .en
     }
 
-    /// 建一張純色 NSImage。
+    /// 建一張純色 NSImage（deviceRGB 點陣，像素精確；不用 lockFocus 以免受螢幕色彩描述檔影響）。
     private static func solidImage(_ w: Int, _ h: Int, _ c: NSColor) -> NSImage {
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        c.setFill(); NSRect(x: 0, y: 0, width: w, height: h).fill(using: .copy)
+        NSGraphicsContext.restoreGraphicsState()
         let img = NSImage(size: NSSize(width: w, height: h))
-        img.lockFocus(); c.setFill(); NSRect(x: 0, y: 0, width: w, height: h).fill(); img.unlockFocus()
+        img.addRepresentation(rep)
         return img
     }
     private static func greenWithFloatingBlue() -> CanvasView {
@@ -887,5 +903,214 @@ enum UnitTests {
         let secondRowFirst = Palette.standard[10]
         guard let c2 = secondRowFirst.usingColorSpace(.deviceRGB) else { return }
         assertEq("palette.row2first.r", Int(c2.redComponent * 255), 255)
+    }
+
+    // MARK: - 新增回歸測試（bug 修正 / 新功能）
+
+    private static func mouse(_ cv: CanvasView, _ type: NSEvent.EventType, _ x: CGFloat, _ y: CGFloat,
+                              clicks: Int = 1, flags: NSEvent.ModifierFlags = []) {
+        guard let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: y), modifierFlags: flags,
+                                         timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0,
+                                         clickCount: clicks, pressure: 1) else { return }
+        switch type {
+        case .leftMouseDown: cv.mouseDown(with: e)
+        case .leftMouseDragged: cv.mouseDragged(with: e)
+        case .leftMouseUp: cv.mouseUp(with: e)
+        default: break
+        }
+    }
+    private static func key(_ cv: CanvasView, _ code: UInt16) {
+        guard let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                       windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "",
+                                       isARepeat: false, keyCode: code) else { return }
+        cv.keyDown(with: e)
+    }
+    private static func whiteCanvas(_ w: Int = 100, _ h: Int = 80) -> CanvasView {
+        let cv = makeCanvas(w, h)
+        cv.resetCanvas(size: NSSize(width: w, height: h), fill: .white)
+        return cv
+    }
+
+    static func testDocumentEditedNotification() {
+        let cv = whiteCanvas()
+        var count = 0
+        let obs = NotificationCenter.default.addObserver(forName: PaintState.documentEdited, object: cv, queue: nil) { _ in count += 1 }
+        cv.testStroke(from: NSPoint(x: 5, y: 5), to: NSPoint(x: 20, y: 5), tool: .pencil)
+        cv.pushHistory()
+        assertEq("dirty.afterDraw", count, 1)
+        cv.undo()
+        assertEq("dirty.afterUndo", count, 2)
+        NotificationCenter.default.removeObserver(obs)
+    }
+
+    static func testSelectionMovePreservesColors() {
+        let cv = whiteCanvas()
+        let c = NSColor(deviceRed: 0.13, green: 0.57, blue: 0.91, alpha: 1)
+        cv.drawInBitmap { _ in c.setFill(); NSRect(x: 10, y: 10, width: 20, height: 20).fill() }
+        cv.pushHistory()
+        let before = pixel(of: cv, 15, 15)!
+        cv.testSetRectangularSelection(NSRect(x: 10, y: 10, width: 20, height: 20))
+        cv.selectionRect!.origin = NSPoint(x: 50, y: 40)
+        cv.commitSelection()
+        let after = pixel(of: cv, 55, 45)!
+        assertTrue("selMove.exactColor \(before) vs \(after)", before == after)
+        assertEq("selMove.holeIsBackground", pixel(of: cv, 15, 15)!.0, 255)
+    }
+
+    static func testSelectionFractionalMoveSnaps() {
+        let cv = whiteCanvas()
+        cv.drawInBitmap { _ in NSColor.black.setFill(); NSRect(x: 10, y: 10, width: 20, height: 20).fill() }
+        cv.pushHistory()
+        cv.testSetRectangularSelection(NSRect(x: 10, y: 10, width: 20, height: 20))
+        cv.selectionRect!.origin = NSPoint(x: 50.5, y: 40.4)   // 縮放檢視下的小數座標
+        cv.commitSelection()
+        // 50.5→51, 40.4→40：邊緣像素應是純黑/純白，不是半透明混色
+        assertEq("snap.leftEdgeBlack", pixel(of: cv, 51, 45)!.0, 0)
+        assertEq("snap.outsideWhite", pixel(of: cv, 50, 45)!.0, 255)
+        assertEq("snap.rightEdgeBlack", pixel(of: cv, 70, 45)!.0, 0)
+        assertEq("snap.bottomEdgeBlack", pixel(of: cv, 60, 40)!.0, 0)
+    }
+
+    static func testCurveToolCompletes() {
+        let cv = whiteCanvas()
+        let st = PaintState.shared
+        let (oldTool, oldShape, oldC1) = (st.tool, st.shapeKind, st.color1)
+        st.tool = .shape; st.shapeKind = .curve; st.color1 = .black
+        let n0 = cv.history.count
+        mouse(cv, .leftMouseDown, 10, 40); mouse(cv, .leftMouseDragged, 90, 40); mouse(cv, .leftMouseUp, 90, 40)
+        assertTrue("curve.pendingAfterLine", cv.hasPendingShape)
+        mouse(cv, .leftMouseDown, 40, 70); mouse(cv, .leftMouseUp, 40, 70)
+        assertTrue("curve.pendingAfterBend1", cv.hasPendingShape)
+        mouse(cv, .leftMouseDown, 60, 10); mouse(cv, .leftMouseUp, 60, 10)
+        assertTrue("curve.finished", !cv.hasPendingShape)
+        assertEq("curve.historyPushed", cv.history.count, n0 + 1)
+        assertTrue("curve.startDrawn", pixel(of: cv, 11, 40)!.0 < 128)
+        st.tool = oldTool; st.shapeKind = oldShape; st.color1 = oldC1
+    }
+
+    static func testShiftConstrain() {
+        let a = NSPoint.zero
+        assertEq("constrain.horizontal", CanvasView.constrain(from: a, to: NSPoint(x: 10, y: 3), line: true), NSPoint(x: 10, y: 0))
+        assertEq("constrain.vertical", CanvasView.constrain(from: a, to: NSPoint(x: 2, y: -9), line: true), NSPoint(x: 0, y: -9))
+        assertEq("constrain.diag", CanvasView.constrain(from: a, to: NSPoint(x: 10, y: 9), line: true), NSPoint(x: 10, y: 10))
+        assertEq("constrain.square", CanvasView.constrain(from: a, to: NSPoint(x: 10, y: -4), line: false), NSPoint(x: 10, y: -10))
+    }
+
+    static func testJPEGFlattensTransparency() {
+        let cv = makeCanvas(20, 20)
+        cv.resetCanvas(size: NSSize(width: 20, height: 20), fill: .clear)
+        guard let d = cv.exportData(fileType: .jpeg), let rep = NSBitmapImageRep(data: d),
+              let c = rep.colorAt(x: 10, y: 10)?.usingColorSpace(.deviceRGB) else {
+            failures.append("jpeg.export.failed"); return
+        }
+        assertTrue("jpeg.transparentBecomesWhite (\(c.redComponent))", c.redComponent > 0.94 && c.greenComponent > 0.94)
+    }
+
+    static func testRotateKeepsAlpha() {
+        let cv = makeCanvas(30, 20)
+        cv.resetCanvas(size: NSSize(width: 30, height: 20), fill: .clear)
+        cv.rotateCanvas(byDegrees: 90)
+        assertEq("rotate.alphaKept", pixel(of: cv, 5, 5)!.3, 0)
+        cv.flipCanvas(horizontal: true)
+        assertEq("flip.alphaKept", pixel(of: cv, 5, 5)!.3, 0)
+        cv.scaleCanvas(toSize: NSSize(width: 40, height: 60))
+        assertEq("scale.alphaKept", pixel(of: cv, 5, 5)!.3, 0)
+    }
+
+    static func testHistoryMemoryCap() {
+        let old = History.maxBytes
+        let cv = whiteCanvas(100, 80)   // 32000 bytes / 張
+        History.maxBytes = 70_000
+        for _ in 0..<5 { cv.pushHistory() }
+        assertEq("historyCap.count", cv.history.count, 2)
+        assertTrue("historyCap.canUndoOnce", cv.canUndo())
+        History.maxBytes = old
+    }
+
+    static func testTransparentSelection() {
+        let st = PaintState.shared
+        let (oldT, oldC2) = (st.transparentSelection, st.color2)
+        st.transparentSelection = true; st.color2 = .white
+        let cv = whiteCanvas()
+        cv.drawInBitmap { _ in NSColor.black.setFill(); NSRect(x: 10, y: 10, width: 10, height: 10).fill() }
+        cv.testSetRectangularSelection(NSRect(x: 0, y: 0, width: 40, height: 40))
+        guard let rep = cv.selectionImage?.representations.first as? NSBitmapImageRep,
+              let bg = rep.colorAt(x: 30, y: 5), let fg = rep.colorAt(x: 15, y: 40 - 1 - 15) else {
+            failures.append("transSel.noRep"); st.transparentSelection = oldT; st.color2 = oldC2; return
+        }
+        assertTrue("transSel.backgroundClear", bg.alphaComponent < 0.01)
+        assertTrue("transSel.foregroundOpaque", fg.alphaComponent > 0.99)
+        st.transparentSelection = oldT; st.color2 = oldC2
+    }
+
+    static func testInvertColors() {
+        let cv = whiteCanvas(20, 20)
+        cv.drawInBitmap { ctx in ctx.compositingOperation = .clear; NSRect(x: 0, y: 0, width: 5, height: 5).fill() }
+        cv.invertColors()
+        let p = pixel(of: cv, 10, 10)!
+        assertTrue("invert.whiteToBlack", p.0 == 0 && p.1 == 0 && p.2 == 0 && p.3 == 255)
+        assertEq("invert.transparentStays", pixel(of: cv, 2, 2)!.3, 0)
+        cv.undo()
+        assertEq("invert.undo", pixel(of: cv, 10, 10)!.0, 255)
+    }
+
+    static func testAspectLinker() {
+        assertEq("aspect.w2h", AspectLinker.linked(400, from: 800, to: 600), 300)
+        assertEq("aspect.h2w", AspectLinker.linked(300, from: 600, to: 800), 400)
+    }
+
+    static func testPencilCrisp() {
+        let st = PaintState.shared
+        let old = st.color1; st.color1 = .black
+        let cv = whiteCanvas()
+        cv.testStroke(from: NSPoint(x: 10.5, y: 10.5), to: NSPoint(x: 30.3, y: 10.7), tool: .pencil)
+        assertEq("pencil.onLine", pixel(of: cv, 20, 10)!.0, 0)
+        assertEq("pencil.above", pixel(of: cv, 20, 11)!.0, 255)
+        assertEq("pencil.below", pixel(of: cv, 20, 9)!.0, 255)
+        st.color1 = old
+    }
+
+    static func testRecentFiles() {
+        let suite = "paint.unittest.recent"
+        guard let d = UserDefaults(suiteName: suite) else { return }
+        let old = RecentFiles.defaults
+        RecentFiles.defaults = d
+        RecentFiles.clear()
+        let tmp = FileManager.default.temporaryDirectory
+        let a = tmp.appendingPathComponent("recentA.png"), b = tmp.appendingPathComponent("recentB.png")
+        FileManager.default.createFile(atPath: a.path, contents: Data())
+        FileManager.default.createFile(atPath: b.path, contents: Data())
+        RecentFiles.add(a); RecentFiles.add(b); RecentFiles.add(a)
+        assertEq("recent.order", RecentFiles.urls.map { $0.lastPathComponent }, ["recentA.png", "recentB.png"])
+        try? FileManager.default.removeItem(at: b)
+        assertEq("recent.missingFiltered", RecentFiles.urls.count, 1)
+        RecentFiles.clear()
+        try? FileManager.default.removeItem(at: a)
+        d.removePersistentDomain(forName: suite)
+        RecentFiles.defaults = old
+    }
+
+    static func testDeleteKeyRemovesSelection() {
+        let cv = whiteCanvas()
+        cv.drawInBitmap { _ in NSColor.black.setFill(); NSRect(x: 10, y: 10, width: 10, height: 10).fill() }
+        cv.testSetRectangularSelection(NSRect(x: 5, y: 5, width: 20, height: 20))
+        key(cv, 51)   // Delete
+        assertTrue("delete.selectionGone", cv.selectionImage == nil && cv.selectionRect == nil)
+        assertEq("delete.filledBackground", pixel(of: cv, 15, 15)!.0, 255)
+    }
+
+    static func testEscCancelsPolygon() {
+        let cv = whiteCanvas()
+        let st = PaintState.shared
+        let (oldTool, oldShape) = (st.tool, st.shapeKind)
+        st.tool = .shape; st.shapeKind = .polygon
+        let n0 = cv.history.count
+        mouse(cv, .leftMouseDown, 10, 10); mouse(cv, .leftMouseUp, 10, 10)
+        mouse(cv, .leftMouseDown, 50, 10); mouse(cv, .leftMouseUp, 50, 10)
+        assertTrue("polygon.pending", cv.hasPendingShape)
+        cv.cancelOperation(nil)
+        assertTrue("polygon.cancelled", !cv.hasPendingShape)
+        assertEq("polygon.noHistory", cv.history.count, n0)
+        st.tool = oldTool; st.shapeKind = oldShape
     }
 }

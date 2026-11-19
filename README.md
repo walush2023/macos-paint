@@ -16,7 +16,7 @@ No web view, no Electron, no external dependencies — just a single native `.ap
 
 **Paint for macOS** brings the classic Windows Paint experience to the Mac. It reproduces the Windows 7/10‑style **Ribbon** interface, the full tool set, the shape library, the color palette, and the editing workflow you remember — implemented from scratch on top of AppKit's `NSView`, `NSBitmapImageRep`, and `NSBezierPath`.
 
-The whole application is roughly **5,000 lines of Swift across 16 files**, with **31 automated tests** and a headless self‑test harness that renders the drawing engine and UI to PNG for visual verification.
+The whole application is roughly **5,000 lines of Swift across 16 files**, with **55 automated tests** and a headless self‑test harness that renders the drawing engine and UI to PNG for visual verification.
 
 > **Localized in 4 languages** — English, Traditional Chinese (繁體中文), Simplified Chinese (简体中文), and Japanese (日本語) — auto-selected from your macOS system language.
 
@@ -35,24 +35,32 @@ The whole application is roughly **5,000 lines of Swift across 16 files**, with 
 ## Features
 
 ### Tools
-- **Pencil** — 1px freehand drawing
+- **Pencil** — crisp, non‑antialiased 1px freehand drawing
 - **Brushes (9 styles)** — round, calligraphy 1 & 2, airbrush, oil, crayon, marker, natural pencil, watercolour, each with its own stroke algorithm
 - **Eraser** — paints with the background color (or **transparent**, erasing to real alpha)
 - **Fill with color (paint bucket)** — scanline flood fill with an adjustable **tolerance slider** (Windows 11 style): raise it to fill similar colors together
 - **Color picker (eyedropper)** — sample any pixel into Color 1 / Color 2
 - **Text** — click to type, rendered into the bitmap
-- **Magnifier** — click to zoom in (right‑click to zoom out)
+- **Magnifier** — click to zoom in (right‑click / ⌥‑click to zoom out), centred on the clicked point
 
 ### Shapes (23)
 Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right triangle, diamond, pentagon, hexagon, four arrows (←↑→↓), 4/5/6‑point stars, rectangular / elliptical / cloud callouts, heart, and lightning bolt — each with independent **outline** and **fill** styles.
+- Hold **Shift** for perfect squares / circles and 45°‑snapped lines
+- Right‑drag swaps Color 1 / Color 2 (outline ↔ fill)
+- Curve: drag a line, then click‑or‑drag two bend points; polygon: click vertices, double‑click / click the start point / press Return to close
+- **Esc** cancels a shape in progress
 
 ### Selection & Image editing
 - Rectangular **and** free‑form selection
-- Move selections, plus **8 resize handles** to scale them
+- Move selections, plus **8 resize handles** to scale them; arrow keys nudge (Shift = 10px), Delete removes
+- **Transparent selection** — background‑colour pixels in a floating selection become see‑through
+- Selections are copied pixel‑exact (no colour shift or blur when moved)
 - Cut / Copy / Paste / Delete via the system pasteboard
 - Crop to selection
 - Resize / rescale the canvas
-- Rotate 90° / 180°, flip horizontal / vertical
+- Rotate 90° / 180°, flip horizontal / vertical (transparency preserved)
+- **Invert colours** (⇧⌘I, selection or whole image) and **Clear image** (⇧⌘N)
+- Resize dialog keeps the aspect ratio when the box is ticked
 
 ### Colors
 - 20‑swatch standard Paint palette + Color 1 / Color 2
@@ -68,14 +76,17 @@ Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right tri
 ### View
 - Zoom **25%–800%** in 25% steps — the View‑tab Zoom In/Out buttons and the bottom‑right `−` / `+` controls share identical stepping logic
 - Live zoom slider and percentage in the status bar
-- Gridlines (at high zoom), rulers toggle, status bar toggle, full‑screen
+- Pinch‑to‑zoom and ⌘‑scroll zoom around the pointer; **Fit to window** (⌘9)
+- Gridlines (at high zoom), pixel **rulers** with pointer marker, status bar (pointer, canvas and selection size), full‑screen (⌃⌘F)
 
 ### File
 - New / Open / Save / Save As (**PNG, JPEG, BMP, GIF, TIFF**)
 - Print
 - **Drag & drop** an image file onto the canvas to load it (with a blue drop highlight)
 - Image properties dialog
-- Unsaved‑changes confirmation
+- **Open Recent** menu
+- JPEG/BMP export flattens transparency onto white (instead of black)
+- Unsaved‑changes confirmation on New / Open / Close (⌘W) / Quit — every edit marks the document modified, and a cancelled or failed save never discards your work; save errors are reported
 
 ### Localization
 - Full UI translated into **English · 繁體中文 · 简体中文 · 日本語**, auto‑selected from the macOS system language (falls back to English).
@@ -84,7 +95,7 @@ Line, curve, ellipse, rectangle, rounded rectangle, polygon, triangle, right tri
 - Light‑appearance window matching Paint's look (readable in any system theme)
 - Custom **retina‑crisp tool cursors** drawn as vectors — a yellow segmented pencil, a tilting paint bucket with a pouring drop, a 3D pink eraser, a light‑blue eyedropper, a magnifier with a `+`, precise crosshairs, plus diagonal/edge resize and 4‑way move cursors
 - **Canvas resize handles** (right / bottom / corner) drag to extend or crop the canvas; selection handles resize floating images
-- Snapshot‑based **undo/redo** that survives canvas‑size changes (resize, rotate, crop, image insert)
+- Snapshot‑based **undo/redo** (memory‑capped for large images) that survives canvas‑size changes (resize, rotate, crop, image insert)
 - Ribbon laid out on a unified content band with a single type scale for tidy alignment
 
 ---

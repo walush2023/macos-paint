@@ -581,11 +581,17 @@ final class RibbonView: NSView {
         m.addItem(withTitle: tr("任意形狀選取"), action: #selector(setSelectFree), keyEquivalent: "")
         m.addItem(.separator())
         m.addItem(withTitle: tr("全選"),       action: Selector("selectAll:"), keyEquivalent: "")
+        m.addItem(.separator())
+        let trans = m.addItem(withTitle: tr("透明選取"), action: #selector(toggleTransparentSel), keyEquivalent: "")
+        trans.state = PaintState.shared.transparentSelection ? .on : .off
         for item in m.items where item.action == Selector("selectAll:") {
             item.target = window?.windowController
         }
         for item in m.items where item.target == nil { item.target = self }
         m.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.frame.height), in: sender)
+    }
+    @objc private func toggleTransparentSel() {
+        PaintState.shared.transparentSelection.toggle()
     }
     @objc private func setSelectRect() {
         PaintState.shared.selectionShape = .rectangle

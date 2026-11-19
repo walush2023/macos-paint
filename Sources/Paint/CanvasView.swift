@@ -14,7 +14,8 @@ final class CanvasView: NSView {
     private var curvePoints: [NSPoint] = []
     private var curvePhase: Int = 0    // 0: drawing line, 1: first bend, 2: second bend
     private var polygonPoints: [NSPoint] = []
-    private var lastClickTime: TimeInterval = 0
+    /// 形狀開始時按下的鍵：0=左鍵(外框 color1/填色 color2)，1=右鍵(兩色互換)。
+    private var shapeButton: Int = 0
 
     // Selection state
     var selectionRect: NSRect? = nil
@@ -68,6 +69,8 @@ final class CanvasView: NSView {
         let t = PaintState.shared.tool
         // 切換到非文字工具時，合入正在編輯的文字
         if t != .text, activeTextField != nil { commitText() }
+        // 切換工具時，完成進行中的曲線/多邊形（避免預覽殘留在 overlay）
+        finishPendingShape()
         // 切換到非選取工具時，合入並結束目前的浮動選取
         if t != .selectRect, t != .selectFree, selectionRect != nil {
             commitSelection()
@@ -80,19 +83,93 @@ final class CanvasView: NSView {
         if activeTextField != nil { TextFormatPanel.shared.apply() }
     }
 
-    /// ESC：合入並取消目前選取/文字狀態。
+    /// ESC：取消進行中的形狀；合入並取消目前選取/文字狀態。
     override func cancelOperation(_ sender: Any?) {
         if activeTextField != nil { commitText(); return }
+        if hasPendingShape { cancelPendingShape(); return }
         if selectionRect != nil || selectionPath != nil {
             commitSelection()
         }
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {   // ESC
-            if selectionRect != nil || selectionPath != nil { commitSelection(); return }
+        switch event.keyCode {
+        case 53:   // ESC
+            cancelOperation(nil); return
+        case 36, 76:   // Return / Enter：完成多邊形/曲線
+            if hasPendingShape { finishPendingShape(); return }
+        case 51, 117:  // Delete / Forward Delete：刪除選取（以背景色填補）
+            if selectionImage != nil { _ = cutSelection(); return }
+        case 123, 124, 125, 126:   // 方向鍵：微移選取（Shift = 10 px）
+            if var sel = selectionRect, selectionImage != nil {
+                let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+                switch event.keyCode {
+                case 123: sel.origin.x -= step
+                case 124: sel.origin.x += step
+                case 125: sel.origin.y -= step
+                default:  sel.origin.y += step
+                }
+                selectionRect = sel
+                needsDisplay = true
+                return
+            }
+        default: break
         }
         super.keyDown(with: event)
+    }
+
+    // MARK: - 進行中的多步驟形狀（曲線 / 多邊形）
+
+    var hasPendingShape: Bool { !polygonPoints.isEmpty || curvePhase > 0 || (isDrawing && PaintState.shared.tool == .shape) }
+
+    /// 放棄進行中的形狀（ESC）。
+    func cancelPendingShape() {
+        guard hasPendingShape else { return }
+        polygonPoints.removeAll()
+        curvePoints.removeAll()
+        curvePhase = 0
+        if PaintState.shared.tool == .shape { isDrawing = false }
+        clearOverlay()
+    }
+
+    /// 完成進行中的形狀（Enter / 切換工具）：曲線以目前控制點畫出，多邊形至少 3 點才封閉。
+    func finishPendingShape() {
+        if curvePhase > 0, curvePoints.count >= 2 {
+            finalizeCurve()
+        } else if polygonPoints.count >= 3 {
+            finalizePolygon()
+        } else {
+            cancelPendingShape()
+        }
+    }
+
+    // MARK: - 縮放手勢（觸控板捏合 / ⌘+滾輪）
+
+    override func magnify(with event: NSEvent) {
+        let anchor = convert(event.locationInWindow, from: nil)
+        setZoom(PaintState.shared.zoom * (1 + event.magnification), anchor: anchor)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) {
+            let dy = event.scrollingDeltaY
+            guard dy != 0 else { return }
+            let anchor = convert(event.locationInWindow, from: nil)
+            let factor: CGFloat = event.hasPreciseScrollingDeltas ? (1 + dy / 200) : (dy > 0 ? 1.25 : 0.8)
+            setZoom(PaintState.shared.zoom * factor, anchor: anchor)
+            return
+        }
+        super.scrollWheel(with: event)
+    }
+
+    /// 設定縮放（25%–800%），anchor 為要保持在畫面中央附近的畫布像素座標。
+    func setZoom(_ z: CGFloat, anchor: NSPoint?) {
+        let zoom = max(0.25, min(8.0, z))
+        guard abs(zoom - PaintState.shared.zoom) > 0.0001 else { return }
+        PaintState.shared.zoom = zoom
+        var info: [String: Any] = [:]
+        if let a = anchor { info["anchor"] = NSValue(point: a) }
+        NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil, userInfo: info)
     }
 
     // 依當前工具設定游標
@@ -170,7 +247,7 @@ final class CanvasView: NSView {
         if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
             NSGraphicsContext.current = ctx
             fill.setFill()
-            NSRect(x: 0, y: 0, width: rep.pixelsWide, height: rep.pixelsHigh).fill()
+            NSRect(x: 0, y: 0, width: rep.pixelsWide, height: rep.pixelsHigh).fill(using: .copy)
             ctx.flushGraphics()
         }
         NSGraphicsContext.restoreGraphicsState()
@@ -220,8 +297,73 @@ final class CanvasView: NSView {
         return copy
     }
 
+    /// 從底圖**精確**複製一塊像素（視覺座標、左下原點）。直接搬記憶體：
+    /// 不經 lockFocus → 不受螢幕色彩描述檔 / Retina 2x 影響，移動選取不會變色或變糊。
+    private func copyPixels(in rect: NSRect) -> NSBitmapImageRep? {
+        let x0 = Int(rect.minX.rounded()), w = Int(rect.width.rounded()), h = Int(rect.height.rounded())
+        let top = bitmap.pixelsHigh - Int(rect.maxY.rounded())
+        guard w > 0, h > 0, x0 >= 0, top >= 0,
+              x0 + w <= bitmap.pixelsWide, top + h <= bitmap.pixelsHigh,
+              let dst = makeBlankRep(size: NSSize(width: w, height: h), fill: .clear),
+              let s = bitmap.bitmapData, let d = dst.bitmapData else { return nil }
+        let spp = bitmap.samplesPerPixel
+        for row in 0..<h {
+            memcpy(d + row * dst.bytesPerRow,
+                   s + (top + row) * bitmap.bytesPerRow + x0 * spp,
+                   w * spp)
+        }
+        return dst
+    }
+
+    /// 把點陣包成 NSImage（點大小 = 像素大小）。
+    private func image(from rep: NSBitmapImageRep) -> NSImage {
+        let img = NSImage(size: NSSize(width: rep.pixelsWide, height: rep.pixelsHigh))
+        img.addRepresentation(rep)
+        return img
+    }
+
+    /// 把任意 NSImage 轉成指定像素大小的畫布格式點陣（用於反轉色彩等需直接改像素的操作）。
+    private func rep(of img: NSImage, size: NSSize) -> NSBitmapImageRep? {
+        if let r = img.representations.first as? NSBitmapImageRep, img.representations.count == 1,
+           r.pixelsWide == Int(size.width), r.pixelsHigh == Int(size.height),
+           r.bitsPerSample == 8, r.samplesPerPixel == 4, !r.isPlanar,
+           r.colorSpaceName == .deviceRGB, !r.bitmapFormat.contains(.alphaNonpremultiplied),
+           !r.bitmapFormat.contains(.alphaFirst) {
+            return r
+        }
+        guard let rep = makeBlankRep(size: size, fill: .clear) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
+            NSGraphicsContext.current = ctx
+            img.draw(in: NSRect(origin: .zero, size: size), from: .zero, operation: .copy, fraction: 1)
+            ctx.flushGraphics()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        return rep
+    }
+
+    /// 8-bit 預乘 RGBA（與底圖格式一致）。
+    private func premultipliedBytes(_ c: NSColor) -> (UInt8, UInt8, UInt8, UInt8) {
+        let conv = c.usingColorSpace(.deviceRGB) ?? c
+        var rgba: [CGFloat] = [0, 0, 0, 0]
+        conv.getComponents(&rgba)
+        let a = rgba[3]
+        func b(_ v: CGFloat) -> UInt8 { UInt8(max(0, min(255, (v * 255).rounded()))) }
+        return (b(rgba[0] * a), b(rgba[1] * a), b(rgba[2] * a), b(a))
+    }
+
     func pushHistory() {
         history.push(copyBitmap(bitmap))
+        NotificationCenter.default.post(name: PaintState.documentEdited, object: self)
+    }
+
+    /// 通知狀態列目前選取大小。
+    private func postSelectionChanged() {
+        var info: [String: Int] = [:]
+        if let r = selectionRect, r.width > 0, r.height > 0 {
+            info = ["w": Int(r.width.rounded()), "h": Int(r.height.rounded())]
+        }
+        NotificationCenter.default.post(name: PaintState.selectionChanged, object: self, userInfo: info)
     }
 
     /// 丟棄目前的浮動選取（不合入底圖）。
@@ -231,6 +373,7 @@ final class CanvasView: NSView {
         selectionPath = nil
         resizingHandle = nil
         movingSelection = false
+        postSelectionChanged()
     }
 
     func undo() {
@@ -240,14 +383,17 @@ final class CanvasView: NSView {
             needsDisplay = true
             return
         }
+        cancelPendingShape()
         guard let snap = history.undo() else { return }
         discardSelection()
         installBitmap(copyBitmap(snap), resetHistory: false)
+        NotificationCenter.default.post(name: PaintState.documentEdited, object: self)
     }
     func redo() {
         guard let snap = history.redo() else { return }
         discardSelection()
         installBitmap(copyBitmap(snap), resetHistory: false)
+        NotificationCenter.default.post(name: PaintState.documentEdited, object: self)
     }
     func canUndo() -> Bool { history.canUndo() }
     func canRedo() -> Bool { history.canRedo() }
@@ -277,14 +423,39 @@ final class CanvasView: NSView {
     }
 
     func exportData(fileType: NSBitmapImageRep.FileType) -> Data? {
+        commitText()
         commitSelection()
-        return bitmap.representation(using: fileType, properties: [:])
+        switch fileType {
+        case .jpeg, .bmp:
+            // 不支援透明的格式：先疊在白底上，否則透明處會變成黑色。
+            guard let flat = makeBlankRep(size: NSSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh),
+                                          fill: .white) else { return nil }
+            NSGraphicsContext.saveGraphicsState()
+            if let ctx = NSGraphicsContext(bitmapImageRep: flat) {
+                NSGraphicsContext.current = ctx
+                bitmap.draw(in: NSRect(x: 0, y: 0, width: flat.pixelsWide, height: flat.pixelsHigh),
+                            from: .zero, operation: .sourceOver, fraction: 1,
+                            respectFlipped: false, hints: nil)
+                ctx.flushGraphics()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            let props: [NSBitmapImageRep.PropertyKey: Any] =
+                fileType == .jpeg ? [.compressionFactor: 0.92] : [:]
+            return flat.representation(using: fileType, properties: props)
+        default:
+            return bitmap.representation(using: fileType, properties: [:])
+        }
     }
 
-    func scaleCanvas(toSize newSize: NSSize) {
+    /// 畫布尺寸上限（避免輸入過大數值造成記憶體爆掉）。
+    static let maxDimension: CGFloat = 16384
+
+    func scaleCanvas(toSize requested: NSSize) {
         commitSelection()
+        let newSize = NSSize(width: min(CanvasView.maxDimension, max(1, requested.width.rounded())),
+                             height: min(CanvasView.maxDimension, max(1, requested.height.rounded())))
         let oldImage = currentBitmapImage()
-        guard let rep = makeBlankRep(size: newSize, fill: .white) else { return }
+        guard let rep = makeBlankRep(size: newSize, fill: .clear) else { return }
         installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
             oldImage.draw(in: NSRect(origin: .zero, size: newSize))
@@ -321,7 +492,8 @@ final class CanvasView: NSView {
     /// 拖拉中即時預覽新尺寸（不寫歷史）。內容以基準影像左上對齊重繪。
     func previewCanvasResize(to newSize: NSSize) {
         guard let base = resizeBaseImage else { return }
-        let w = max(1, newSize.width.rounded()), h = max(1, newSize.height.rounded())
+        let w = min(CanvasView.maxDimension, max(1, newSize.width.rounded()))
+        let h = min(CanvasView.maxDimension, max(1, newSize.height.rounded()))
         guard let rep = makeBlankRep(size: NSSize(width: w, height: h), fill: .white) else { return }
         installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
@@ -543,8 +715,10 @@ final class CanvasView: NSView {
         // 維持最小尺寸 (避免反折)
         if r.width < 4 { r.size.width = 4 }
         if r.height < 4 { r.size.height = 4 }
-        selectionRect = r
+        selectionRect = NSRect(x: r.origin.x.rounded(), y: r.origin.y.rounded(),
+                               width: r.width.rounded(), height: r.height.rounded())
         needsDisplay = true
+        postSelectionChanged()
     }
 
     // MARK: - Mouse handling
@@ -572,6 +746,10 @@ final class CanvasView: NSView {
             userInfo: ["x": Int(p.x), "y": Int(imgY)]
         )
         updateHoverCursor(at: raw)
+        // 多邊形：滑鼠移動時預覽下一條邊
+        if PaintState.shared.tool == .shape, PaintState.shared.shapeKind == .polygon, !polygonPoints.isEmpty {
+            previewPolygon(currentEnd: p)
+        }
     }
 
     /// 滑鼠停在選取上時，依把手/內部切換縮放或移動游標。
@@ -631,43 +809,43 @@ final class CanvasView: NSView {
             if activeTextField != nil { commitText() }   // 已在編輯 → 先合入再開新的
             beginText(at: pc)
         case .magnifier:
-            let factor: CGFloat = dragButton == 1 ? 0.5 : 2.0
-            let zoom = max(0.1, min(8.0, PaintState.shared.zoom * factor))
-            PaintState.shared.zoom = zoom
-            NotificationCenter.default.post(name: PaintState.zoomChanged, object: nil)
+            // 左鍵放大、右鍵（或 Option）縮小，並以點擊處為中心
+            let zoomOut = dragButton == 1 || event.modifierFlags.contains(.option)
+            setZoom(PaintState.shared.zoom * (zoomOut ? 0.5 : 2.0), anchor: pc)
         case .shape:
             let kind = PaintState.shared.shapeKind
             if kind == .polygon {
-                let now = event.timestamp
                 if polygonPoints.isEmpty {
+                    shapeButton = dragButton
                     polygonPoints = [pc]
+                } else if event.clickCount >= 2 {
+                    finalizePolygon()   // 雙擊 → 封閉
                 } else {
-                    let isDouble = (now - lastClickTime) < 0.35
-                    if isDouble {
+                    // 點回起點附近也封閉
+                    let p0 = polygonPoints[0]
+                    if polygonPoints.count >= 3, hypot(pc.x - p0.x, pc.y - p0.y) <= 4 {
                         finalizePolygon()
                     } else {
-                        polygonPoints.append(pc)
-                        previewPolygon(currentEnd: pc)
+                        polygonPoints.append(snapped(from: polygonPoints.last!, to: pc, event: event, line: true))
+                        previewPolygon(currentEnd: polygonPoints.last!)
                     }
                 }
-                lastClickTime = now
                 isDrawing = false
             } else if kind == .curve {
+                // 曲線三步驟：1) 拖出直線 2) 點/拖第一個彎曲點 3) 點/拖第二個彎曲點 → 完成
                 if curvePhase == 0 {
+                    shapeButton = dragButton
                     isDrawing = true
                     dragStart = pc
                     dragLast = pc
                     curvePoints = [pc, pc]
-                } else if curvePhase == 1 {
-                    // adding first control point
+                } else {
+                    isDrawing = true
                     curvePoints.append(pc)
                     previewCurve()
-                } else if curvePhase == 2 {
-                    // adding second control point; finalize
-                    curvePoints.append(pc)
-                    finalizeCurve()
                 }
             } else {
+                shapeButton = dragButton
                 isDrawing = true
                 dragStart = pc; dragLast = pc
             }
@@ -687,7 +865,7 @@ final class CanvasView: NSView {
             return
         }
         if movingSelection, var sel = selectionRect {
-            sel.origin = NSPoint(x: pc.x - moveOffset.x, y: pc.y - moveOffset.y)
+            sel.origin = NSPoint(x: (p.x - moveOffset.x).rounded(), y: (p.y - moveOffset.y).rounded())
             selectionRect = sel
             needsDisplay = true
             return
@@ -702,12 +880,16 @@ final class CanvasView: NSView {
         case .shape:
             let kind = PaintState.shared.shapeKind
             if kind == .curve {
-                if curvePhase == 0 && isDrawing {
-                    curvePoints[1] = pc
+                if isDrawing, !curvePoints.isEmpty {
+                    if curvePhase == 0 {
+                        curvePoints[1] = snapped(from: curvePoints[0], to: pc, event: event, line: true)
+                    } else {
+                        curvePoints[curvePoints.count - 1] = pc   // 拖曳中即時彎曲
+                    }
                     previewCurve()
                 }
             } else if isDrawing && kind != .polygon {
-                previewShape(from: dragStart, to: pc)
+                previewShape(from: dragStart, to: snapped(from: dragStart, to: pc, event: event, line: kind == .line))
             }
         case .selectRect, .selectFree:
             extendSelection(to: pc)
@@ -736,16 +918,30 @@ final class CanvasView: NSView {
         case .shape:
             let kind = PaintState.shared.shapeKind
             if kind == .curve {
-                if isDrawing && curvePhase == 0 {
-                    curvePoints[1] = pc
-                    curvePhase = 1
+                if isDrawing, !curvePoints.isEmpty {
                     isDrawing = false
+                    if curvePhase == 0 {
+                        curvePoints[1] = snapped(from: curvePoints[0], to: pc, event: event, line: true)
+                        // 太短（只是點一下）→ 取消
+                        if hypot(curvePoints[1].x - curvePoints[0].x, curvePoints[1].y - curvePoints[0].y) < 1 {
+                            cancelPendingShape()
+                        } else {
+                            curvePhase = 1
+                        }
+                    } else if curvePhase == 1 {
+                        curvePoints[curvePoints.count - 1] = pc
+                        curvePhase = 2
+                        previewCurve()
+                    } else {
+                        curvePoints[curvePoints.count - 1] = pc
+                        finalizeCurve()
+                    }
                 }
             } else if kind == .polygon {
                 // no-op
             } else if isDrawing {
                 clearOverlay()
-                drawShape(from: dragStart, to: pc)
+                drawShape(from: dragStart, to: snapped(from: dragStart, to: pc, event: event, line: kind == .line))
                 isDrawing = false
                 pushHistory()
             }
@@ -768,12 +964,16 @@ final class CanvasView: NSView {
             if transparent { ctx.compositingOperation = .clear }
             switch tool {
             case .pencil:
-                let path = NSBezierPath()
-                path.lineWidth = 1
-                path.lineCapStyle = .round
-                path.move(to: a); path.line(to: b)
-                color.setStroke()
-                path.stroke()
+                // 鉛筆：1px、不反鋸齒、對齊像素中心 → 清晰的像素線（同 Windows 小畫家）
+                ctx.shouldAntialias = false
+                color.setFill()
+                let ax = floor(a.x), ay = floor(a.y), bx = floor(b.x), by = floor(b.y)
+                let steps = Int(max(abs(bx - ax), abs(by - ay)))
+                for i in 0...max(0, steps) {
+                    let t = steps == 0 ? 0 : CGFloat(i) / CGFloat(steps)
+                    let x = (ax + (bx - ax) * t).rounded(), y = (ay + (by - ay) * t).rounded()
+                    NSRect(x: x, y: y, width: 1, height: 1).fill()
+                }
             case .eraser:
                 bg.setFill()
                 let half = size / 2
@@ -914,13 +1114,40 @@ final class CanvasView: NSView {
 
     // MARK: - Shapes
 
+    private var shapeStroke: NSColor { shapeButton == 1 ? PaintState.shared.color2 : PaintState.shared.color1 }
+    private var shapeFill: NSColor { shapeButton == 1 ? PaintState.shared.color1 : PaintState.shared.color2 }
+
+    /// Shift 約束：直線/多邊形邊/曲線端點鎖 45° 角；其他形狀鎖成正方形（正圓）。
+    private func snapped(from a: NSPoint, to b: NSPoint, event: NSEvent?, line: Bool) -> NSPoint {
+        guard let ev = event, ev.modifierFlags.contains(.shift) else { return b }
+        return CanvasView.constrain(from: a, to: b, line: line)
+    }
+
+    /// 純函式（方便測試）：Shift 約束後的終點。
+    static func constrain(from a: NSPoint, to b: NSPoint, line: Bool) -> NSPoint {
+        let dx = b.x - a.x, dy = b.y - a.y
+        if line {
+            let len = hypot(dx, dy)
+            guard len > 0 else { return b }
+            let step = CGFloat.pi / 4
+            let ang = (atan2(dy, dx) / step).rounded() * step
+            // 水平/垂直直接沿軸；45° 斜線取兩軸等長
+            if abs(sin(ang)) < 0.01 { return NSPoint(x: b.x, y: a.y) }
+            if abs(cos(ang)) < 0.01 { return NSPoint(x: a.x, y: b.y) }
+            let d = max(abs(dx), abs(dy))
+            return NSPoint(x: a.x + d * (cos(ang) > 0 ? 1 : -1), y: a.y + d * (sin(ang) > 0 ? 1 : -1))
+        }
+        let d = max(abs(dx), abs(dy))
+        return NSPoint(x: a.x + (dx < 0 ? -d : d), y: a.y + (dy < 0 ? -d : d))
+    }
+
     private func previewShape(from a: NSPoint, to b: NSPoint) {
         drawInOverlay { _ in
             ShapeRenderer.draw(
                 kind: PaintState.shared.shapeKind,
                 from: a, to: b,
-                stroke: PaintState.shared.color1,
-                fill: PaintState.shared.color2,
+                stroke: shapeStroke,
+                fill: shapeFill,
                 outline: PaintState.shared.outlineStyle,
                 fillStyle: PaintState.shared.fillStyle,
                 size: PaintState.shared.strokeSize
@@ -932,8 +1159,8 @@ final class CanvasView: NSView {
             ShapeRenderer.draw(
                 kind: PaintState.shared.shapeKind,
                 from: a, to: b,
-                stroke: PaintState.shared.color1,
-                fill: PaintState.shared.color2,
+                stroke: shapeStroke,
+                fill: shapeFill,
                 outline: PaintState.shared.outlineStyle,
                 fillStyle: PaintState.shared.fillStyle,
                 size: PaintState.shared.strokeSize
@@ -950,8 +1177,9 @@ final class CanvasView: NSView {
             let path = NSBezierPath()
             path.move(to: pts[0])
             for p in pts.dropFirst() { path.line(to: p) }
-            PaintState.shared.color1.setStroke()
+            shapeStroke.setStroke()
             path.lineWidth = PaintState.shared.strokeSize
+            path.lineJoinStyle = .round
             path.stroke()
         }
     }
@@ -964,12 +1192,13 @@ final class CanvasView: NSView {
             for p in pts.dropFirst() { path.line(to: p) }
             path.close()
             if PaintState.shared.fillStyle == .solid {
-                PaintState.shared.color2.setFill()
+                shapeFill.setFill()
                 path.fill()
             }
             if PaintState.shared.outlineStyle == .solid {
-                PaintState.shared.color1.setStroke()
+                shapeStroke.setStroke()
                 path.lineWidth = PaintState.shared.strokeSize
+                path.lineJoinStyle = .round
                 path.stroke()
             }
         }
@@ -992,7 +1221,8 @@ final class CanvasView: NSView {
                 path.curve(to: pts[1], controlPoint1: pts[2], controlPoint2: pts[3])
             }
             path.lineWidth = PaintState.shared.strokeSize
-            PaintState.shared.color1.setStroke()
+            path.lineCapStyle = .round
+            shapeStroke.setStroke()
             path.stroke()
         }
     }
@@ -1003,11 +1233,13 @@ final class CanvasView: NSView {
             path.move(to: pts[0])
             if pts.count >= 4 {
                 path.curve(to: pts[1], controlPoint1: pts[2], controlPoint2: pts[3])
+            } else if pts.count == 3 {
+                path.curve(to: pts[1], controlPoint1: pts[2], controlPoint2: pts[2])
             } else {
                 path.line(to: pts[1])
             }
             path.lineWidth = PaintState.shared.strokeSize
-            PaintState.shared.color1.setStroke()
+            shapeStroke.setStroke()
             path.lineCapStyle = .round
             path.stroke()
         }
@@ -1038,6 +1270,7 @@ final class CanvasView: NSView {
             let h = abs(p.y - selectionStart.y)
             selectionRect = NSRect(x: minX, y: minY, width: w, height: h)
             needsDisplay = true
+            postSelectionChanged()
         } else if let path = selectionPath {
             path.line(to: p)
             needsDisplay = true
@@ -1068,20 +1301,31 @@ final class CanvasView: NSView {
             x: floor(rect.origin.x), y: floor(rect.origin.y),
             width: ceil(rect.width), height: ceil(rect.height)
         ).intersection(bounds)
-        guard r.width > 0 && r.height > 0 else { selectionRect = nil; return }
-        let img = NSImage(size: r.size)
-        img.lockFocus()
-        bitmap.draw(in: NSRect(
-            x: -r.origin.x, y: -r.origin.y,
-            width: CGFloat(bitmap.pixelsWide), height: CGFloat(bitmap.pixelsHigh)
-        ))
-        img.unlockFocus()
-        selectionImage = img
+        guard r.width > 0 && r.height > 0, let px = copyPixels(in: r) else { selectionRect = nil; return }
+        applyTransparentSelection(px)
+        selectionImage = image(from: px)
         drawInBitmap { _ in
             PaintState.shared.color2.setFill()
-            r.fill()
+            r.fill(using: .copy)   // copy：背景色為透明時會清成透明
         }
         selectionRect = r
+        postSelectionChanged()
+    }
+
+    /// 「透明選取」：浮動選取中等於背景色(color2)的像素變透明（同 Windows 小畫家）。
+    private func applyTransparentSelection(_ rep: NSBitmapImageRep) {
+        guard PaintState.shared.transparentSelection, let d = rep.bitmapData else { return }
+        let (r, g, b, a) = premultipliedBytes(PaintState.shared.color2)
+        guard a > 0 else { return }
+        let spp = rep.samplesPerPixel, bpr = rep.bytesPerRow
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide {
+                let i = y * bpr + x * spp
+                if d[i] == r && d[i+1] == g && d[i+2] == b && d[i+3] == a {
+                    d[i] = 0; d[i+1] = 0; d[i+2] = 0; d[i+3] = 0
+                }
+            }
+        }
     }
     private func liftSelectionFree(path: NSBezierPath) {
         let bb = path.bounds
@@ -1089,41 +1333,52 @@ final class CanvasView: NSView {
             x: floor(bb.origin.x), y: floor(bb.origin.y),
             width: ceil(bb.width), height: ceil(bb.height)
         ).intersection(bounds)
-        guard r.width > 0 && r.height > 0 else { return }
-        let img = NSImage(size: r.size)
-        img.lockFocus()
-        if let shifted = path.copy() as? NSBezierPath {
-            let tx = AffineTransform(translationByX: -r.origin.x, byY: -r.origin.y)
-            shifted.transform(using: tx)
-            shifted.addClip()
+        guard r.width > 0 && r.height > 0,
+              let src = copyPixels(in: r),
+              let px = makeBlankRep(size: r.size, fill: .clear) else { return }
+        // 只保留路徑內的像素（同色彩空間點陣互畫，不經轉換）
+        NSGraphicsContext.saveGraphicsState()
+        if let ctx = NSGraphicsContext(bitmapImageRep: px) {
+            NSGraphicsContext.current = ctx
+            if let shifted = path.copy() as? NSBezierPath {
+                shifted.transform(using: AffineTransform(translationByX: -r.origin.x, byY: -r.origin.y))
+                shifted.addClip()
+            }
+            src.draw(in: NSRect(origin: .zero, size: r.size), from: .zero, operation: .copy,
+                     fraction: 1, respectFlipped: false, hints: nil)
+            ctx.flushGraphics()
         }
-        bitmap.draw(in: NSRect(
-            x: -r.origin.x, y: -r.origin.y,
-            width: CGFloat(bitmap.pixelsWide), height: CGFloat(bitmap.pixelsHigh)
-        ))
-        img.unlockFocus()
-        selectionImage = img
-        drawInBitmap { _ in
+        NSGraphicsContext.restoreGraphicsState()
+        applyTransparentSelection(px)
+        selectionImage = image(from: px)
+        drawInBitmap { ctx in
+            ctx.compositingOperation = .copy   // 背景色為透明時也要清掉原處
             PaintState.shared.color2.setFill()
             path.fill()
         }
         selectionRect = r
+        postSelectionChanged()
     }
 
     func commitSelection() {
-        if let img = selectionImage, let r = selectionRect {
+        if let img = selectionImage, let r0 = selectionRect {
+            // 對齊整數像素，避免縮放檢視下拖移產生小數座標 → 合入後變糊
+            let r = NSRect(x: r0.origin.x.rounded(), y: r0.origin.y.rounded(),
+                           width: max(1, r0.width.rounded()), height: max(1, r0.height.rounded()))
             drawInBitmap { _ in
-                img.draw(in: r)
+                img.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
             }
             selectionImage = nil
             selectionRect = nil
             selectionPath = nil
             pushHistory()
             needsDisplay = true
+            postSelectionChanged()
         } else if selectionRect != nil || selectionPath != nil {
             selectionRect = nil
             selectionPath = nil
             needsDisplay = true
+            postSelectionChanged()
         }
     }
     func selectAll() {
@@ -1142,26 +1397,16 @@ final class CanvasView: NSView {
             selectionRect = nil
             pushHistory()
             needsDisplay = true
+            postSelectionChanged()
         }
         return img
     }
     func copySelection() -> NSImage? {
         if let img = selectionImage { return img }
-        if let r = selectionRect {
-            let img = NSImage(size: r.size)
-            img.lockFocus()
-            bitmap.draw(in: NSRect(
-                x: -r.origin.x, y: -r.origin.y,
-                width: CGFloat(bitmap.pixelsWide), height: CGFloat(bitmap.pixelsHigh)
-            ))
-            img.unlockFocus()
-            return img
+        if let r = selectionRect, let px = copyPixels(in: r.intersection(bounds)) {
+            return image(from: px)
         }
-        let img = NSImage(size: bounds.size)
-        img.lockFocus()
-        bitmap.draw(in: bounds)
-        img.unlockFocus()
-        return img
+        return currentBitmapImage()
     }
     func pasteImage(_ img: NSImage) {
         commitSelection()
@@ -1169,8 +1414,9 @@ final class CanvasView: NSView {
         NotificationCenter.default.post(name: PaintState.toolChanged, object: nil)
         let size = img.size
         selectionImage = img
-        selectionRect = NSRect(origin: NSPoint(x: 0, y: bounds.height - size.height), size: size)
+        selectionRect = NSRect(origin: NSPoint(x: 0, y: (bounds.height - size.height).rounded()), size: size)
         needsDisplay = true
+        postSelectionChanged()
     }
 
     /// 把圖片以「可移動的浮動選取」疊在現有內容上方（拖入第二張圖時用）。
@@ -1200,26 +1446,69 @@ final class CanvasView: NSView {
             origin.y = min(0, max(bounds.height - size.height, origin.y))
         }
         selectionImage = img
-        selectionRect = NSRect(origin: origin, size: size)
+        selectionRect = NSRect(origin: NSPoint(x: origin.x.rounded(), y: origin.y.rounded()), size: size)
         needsDisplay = true
+        postSelectionChanged()
+    }
+
+    // MARK: - 反轉色彩 / 清除
+
+    /// 反轉色彩：有浮動選取時只反轉選取，否則整張畫布（保留 alpha）。
+    func invertColors() {
+        if let img = selectionImage, let r = selectionRect {
+            guard let px = rep(of: img, size: NSSize(width: max(1, r.width.rounded()),
+                                                     height: max(1, r.height.rounded()))),
+                  let copy = copyRep(px) else { return }
+            CanvasView.invertPremultiplied(copy)
+            selectionImage = image(from: copy)
+            needsDisplay = true
+            NotificationCenter.default.post(name: PaintState.documentEdited, object: self)
+            return
+        }
+        commitText()
+        CanvasView.invertPremultiplied(bitmap)
+        needsDisplay = true
+        pushHistory()
+    }
+
+    private func copyRep(_ r: NSBitmapImageRep) -> NSBitmapImageRep? { r.copy() as? NSBitmapImageRep }
+
+    /// 預乘 RGBA：反轉後 c' = a − c。
+    static func invertPremultiplied(_ rep: NSBitmapImageRep) {
+        guard let d = rep.bitmapData else { return }
+        let spp = rep.samplesPerPixel, bpr = rep.bytesPerRow
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide {
+                let i = y * bpr + x * spp
+                let a = d[i + 3]
+                d[i] = a &- min(a, d[i]); d[i+1] = a &- min(a, d[i+1]); d[i+2] = a &- min(a, d[i+2])
+            }
+        }
+    }
+
+    /// 清除影像：整張畫布填入背景色(color2)。
+    func clearImage() {
+        commitText()
+        discardSelection()
+        let c = PaintState.shared.color2
+        drawInBitmap { _ in
+            c.setFill()
+            NSRect(x: 0, y: 0, width: bitmap.pixelsWide, height: bitmap.pixelsHigh).fill(using: .copy)
+        }
+        pushHistory()
     }
 
     // MARK: - Crop / Rotate / Flip
 
     func cropToSelection() {
-        guard let r = selectionRect else { return }
-        let img = selectionImage ?? {
-            let i = NSImage(size: r.size)
-            i.lockFocus()
-            bitmap.draw(in: NSRect(
-                x: -r.origin.x, y: -r.origin.y,
-                width: CGFloat(bitmap.pixelsWide), height: CGFloat(bitmap.pixelsHigh)
-            ))
-            i.unlockFocus()
-            return i
-        }()
+        guard let r0 = selectionRect else { return }
+        let r = NSRect(x: r0.origin.x.rounded(), y: r0.origin.y.rounded(),
+                       width: max(1, r0.width.rounded()), height: max(1, r0.height.rounded()))
+        guard let img = selectionImage ?? copyPixels(in: r.intersection(bounds)).map({ image(from: $0) })
+        else { return }
         selectionImage = nil
         selectionRect = nil
+        postSelectionChanged()
         // 以「透明」為底並用 .copy 原樣搬入 → 保留裁剪區的透明背景（不再變白）
         guard let rep = makeBlankRep(size: r.size, fill: .clear) else { return }
         installBitmap(rep, resetHistory: false)
@@ -1242,7 +1531,7 @@ final class CanvasView: NSView {
             newSize = NSSize(width: s.height, height: s.width)
         }
         let oldImage = currentBitmapImage()
-        guard let rep = makeBlankRep(size: newSize, fill: .white) else { return }
+        guard let rep = makeBlankRep(size: newSize, fill: .clear) else { return }   // 透明為底 → 保留 alpha
         installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
             let tx = NSAffineTransform()
@@ -1259,7 +1548,7 @@ final class CanvasView: NSView {
         commitSelection()
         let s = bounds.size
         let oldImage = currentBitmapImage()
-        guard let rep = makeBlankRep(size: s, fill: .white) else { return }
+        guard let rep = makeBlankRep(size: s, fill: .clear) else { return }   // 透明為底 → 保留 alpha
         installBitmap(rep, resetHistory: false)
         drawInBitmap { _ in
             let tx = NSAffineTransform()

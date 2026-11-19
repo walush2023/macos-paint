@@ -34,6 +34,18 @@ enum L10n {
     }
 
     private static let table: [String: [Lang: String]] = [
+        // 新增功能 / 訊息
+        "最近開啟的檔案":  e("Open Recent", "最近打开的文件", "最近使用したファイル"),
+        "清除選單":        e("Clear Menu", "清除菜单", "メニューを消去"),
+        "關閉":            e("Close", "关闭", "閉じる"),
+        "透明選取":        e("Transparent Selection", "透明选择", "透明の選択"),
+        "符合視窗":        e("Fit to Window", "适应窗口", "ウィンドウに合わせる"),
+        "反轉色彩":        e("Invert Colors", "反色", "色の反転"),
+        "清除影像":        e("Clear Image", "清除图像", "画像を消去"),
+        "無法開啟「%@」：不是支援的影像格式。": e("Couldn't open “%@”: not a supported image format.",
+                                                  "无法打开“%@”：不是支持的图像格式。",
+                                                  "「%@」を開けません：対応していない画像形式です。"),
+        "無法儲存「%@」。": e("Couldn't save “%@”.", "无法保存“%@”。", "「%@」を保存できません。"),
         // App / 視窗 / 標題
         "小畫家":            e("Paint", "画图", "ペイント"),
         "小畫家 (macOS 版)":  e("Paint for macOS", "画图（macOS 版）", "ペイント（macOS 版）"),
